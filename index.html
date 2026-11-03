@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#e8714e" />
+    <title>食光管家</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="phone-shell" aria-label="智能厨房管家">
+      <header class="app-header" id="app-header"></header>
+      <section class="page-content" id="app" aria-live="polite"></section>
+      <nav class="bottom-nav" aria-label="主导航">
+        <button data-tab="home" class="nav-item active"><span>⌂</span><small>首页</small></button>
+        <button data-tab="inventory" class="nav-item"><span>▣</span><small>冰箱</small></button>
+        <button data-tab="recipes" class="nav-item"><span>♨</span><small>菜谱</small></button>
+        <button data-tab="profile" class="nav-item"><span>◌</span><small>我的</small></button>
+      </nav>
+    </main>
+    <div class="modal-layer" id="modal-layer" hidden></div>
+    <div class="toast" id="toast" role="status"></div>
+    <script src="/app.js"></script>
+  </body>
+</html>
