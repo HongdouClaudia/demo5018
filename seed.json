@@ -14,7 +14,6 @@
   "favorites": [],
   "recipes": [],
   "history": [
-    {"id":"history-1","type":"cook","title":"完成烹饪：青椒鸡丝","date":"2026-11-01","detail":"2 人份"},
     {"id":"history-2","type":"purchase","title":"采购入库：牛奶、香蕉","date":"2026-10-30"}
   ]
 }
