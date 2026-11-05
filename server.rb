@@ -91,6 +91,7 @@ def ask_deepseek(question, state)
         "difficulty":"简单|中等|挑战",
         "servings":2,
         "imageEmoji":"一个合适的食物 emoji",
+        "imageKey":"从 tomato-chicken-broccoli、tomato-egg、tomato-egg-broccoli-soup、garlic-broccoli、tomato-egg-rice、chicken-broccoli-rice、chicken-broccoli、tomato-chicken-broccoli-soup 中选择最匹配的一项；无法匹配时留空",
         "tags":["临期优先|库存充足|需要补购|口味匹配"],
         "reason":"推荐原因",
         "appliances":["厨具"],
@@ -100,6 +101,7 @@ def ask_deepseek(question, state)
       "shopping":[{"name":"缺少食材","quantity":1,"unit":"个|g|盒","category":"蔬果|肉禽|水产|调味品|其他","source":"菜名"}]
     }
     recipes 最多返回 3 条。只有库存不足时才在 shopping 中列出缺料。若没有适合菜谱，recipes 可以为空，但仍要给出可执行建议。
+    imageKey 只选择与菜名和主要食材都相符的图片；不能为了匹配图片而改变菜谱食材，不匹配时留空。
   PROMPT
 
   uri = URI('https://api.deepseek.com/chat/completions')
@@ -220,6 +222,8 @@ server.mount_proc '/' do |req, res|
       file_path = File.join(ROOT, 'index.html')
     elsif req.path.match?(%r{\A/(app\.js|styles\.css)\z})
       file_path = File.join(ROOT, req.path.sub(%r{\A/}, ''))
+    elsif req.path.match?(%r{\A/assets/recipes/[a-z0-9-]+\.jpg\z})
+      file_path = File.join(ROOT, req.path.sub(%r{\A/}, ''))
     else
       json_response(res, 404, { error: '未找到接口或页面。' })
       next
@@ -230,7 +234,15 @@ server.mount_proc '/' do |req, res|
       next
     end
     res.status = 200
-    res['Content-Type'] = file_path.end_with?('.css') ? 'text/css; charset=utf-8' : file_path.end_with?('.js') ? 'application/javascript; charset=utf-8' : 'text/html; charset=utf-8'
+    res['Content-Type'] = if file_path.end_with?('.css')
+      'text/css; charset=utf-8'
+    elsif file_path.end_with?('.js')
+      'application/javascript; charset=utf-8'
+    elsif file_path.end_with?('.jpg')
+      'image/jpeg'
+    else
+      'text/html; charset=utf-8'
+    end
     res.body = File.read(file_path)
   rescue StandardError => e
     json_response(res, 422, { error: e.message })
