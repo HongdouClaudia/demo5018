@@ -209,7 +209,9 @@ server.mount_proc '/' do |req, res|
       state['inventory'].reject! { |item| item['quantity'].to_f <= 0 }
       state['history'] << {
         'id' => new_id('cook'), 'type' => 'cook', 'title' => recipe['title'] || '完成烹饪',
-        'date' => Time.now.strftime('%Y-%m-%d'), 'detail' => "#{recipe['servings'] || 1} 人份"
+        'recipeId' => recipe['id'], 'recipeTitle' => recipe['title'] || '完成烹饪',
+        'imageEmoji' => recipe['imageEmoji'], 'date' => Time.now.strftime('%Y-%m-%d'),
+        'detail' => "#{recipe['servings'] || 1} 人份", 'consumption' => consumption
       }
       write_state(state)
       json_response(res, 200, state)
