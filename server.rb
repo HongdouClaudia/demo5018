@@ -9,10 +9,12 @@ require 'openssl'
 require 'fileutils'
 require 'digest'
 require 'time'
+require 'thread'
 
 ROOT = File.expand_path(__dir__)
 DATA_PATH = File.expand_path(ENV.fetch('DATA_PATH', File.join(ROOT, 'data.json')))
 SEED_PATH = File.join(ROOT, 'seed.json')
+STATE_MUTEX = Mutex.new
 
 def load_env_file
   env_path = File.join(ROOT, '.env')
@@ -33,7 +35,9 @@ def read_state
 end
 
 def write_state(state)
-  File.write(DATA_PATH, JSON.pretty_generate(state))
+  state['revision'] = state.fetch('revision', 0).to_i + 1
+  File.write("#{DATA_PATH}.tmp", JSON.pretty_generate(state))
+  File.rename("#{DATA_PATH}.tmp", DATA_PATH)
 end
 
 def json_response(res, status, body)
@@ -47,6 +51,15 @@ def request_json(req)
   JSON.parse(req.body.to_s)
 rescue JSON::ParserError
   nil
+end
+
+# Serialize only mutations. Long model requests must not block inventory reads.
+def with_state_lock(req)
+  if %w[/api/state /api/cook /api/cook/undo /api/sync-shopping].include?(req.path) && req.request_method != 'GET'
+    STATE_MUTEX.synchronize { yield }
+  else
+    yield
+  end
 end
 
 def normalize_agent_result(content)
@@ -268,7 +281,7 @@ def recommend_recipes(options, state)
     next unless (unsafe_statuses.include?(status) || unsafe_statuses.include?(freshness)) && !item['name'].to_s.strip.empty?
     { name: item['name'].to_s[0, 60], status: [status, freshness].reject(&:empty?).join(' / ')[0, 60] }
   end.compact.take(100)
-  prefs = state.fetch('preferences', {})
+  prefs = state.fetch('preferences', {}).merge((options['preferences'] || {}).select { |key, _| %w[flavors appliances].include?(key) })
   allergies = Array(prefs['allergies']).map { |item| item.to_s[0, 60] }.take(30)
   avoid = Array(prefs['avoid']).map { |item| item.to_s[0, 60] }.take(30)
   appliances = Array(prefs['appliances']).map { |item| item.to_s[0, 60] }.take(20)
@@ -362,7 +375,14 @@ server = WEBrick::HTTPServer.new(
 trap('INT') { server.shutdown }
 
 server.mount_proc '/' do |req, res|
+  with_state_lock(req) do
   begin
+    if req.path == '/api/status' && req.request_method == 'GET'
+      head_path = File.join(ROOT, '.git', 'HEAD')
+      branch = File.file?(head_path) ? File.read(head_path).strip.sub('ref: refs/heads/', '') : 'unknown'
+      json_response(res, 200, { service: 'demo5018-recipe', branch: branch, version: 'recipe-ui-2', isolatedData: DATA_PATH != File.join(ROOT, 'data.json') })
+      next
+    end
     if req.path == '/api/state' && req.request_method == 'GET'
       json_response(res, 200, read_state)
       next
@@ -371,6 +391,7 @@ server.mount_proc '/' do |req, res|
     if req.path == '/api/state' && req.request_method == 'PUT'
       body = request_json(req)
       raise '数据格式错误。' unless body.is_a?(Hash) && body['state'].is_a?(Hash)
+      raise '数据已被其他页面更新，请刷新后继续；未覆盖新记录。' unless body['state'].fetch('revision', 0) == read_state.fetch('revision', 0)
       write_state(body['state'])
       json_response(res, 200, body['state'])
       next
@@ -423,6 +444,7 @@ server.mount_proc '/' do |req, res|
       body = request_json(req) || {}
       recipe = body['recipe'] || {}
       consumption = Array(body['consumption'])
+      calibrations = Array(body['calibrations'])
       additions = Array(body['additions'])
       state = read_state
       state['cookOperations'] ||= []
@@ -450,6 +472,9 @@ server.mount_proc '/' do |req, res|
         raise '找不到对应的库存食材，请刷新后重试。' unless item
         expected = consumption.select { |line| line['inventoryId'] == inventory_id }.map { |line| Float(line['expectedQuantity']) }.uniq
         raise '库存记录已变化，请重新打开消耗确认。' unless expected.length == 1 && item['quantity'].to_f == expected.first
+        consumption.select { |line| line['inventoryId'] == inventory_id }.each do |line|
+          raise '库存日期、状态或数量已变化，请重新核对本项。' unless line['expectedItem'] == item
+        end
         unsafe_statuses = %w[不可食用 已确认不可食用 丢弃 变质 状态存疑 待确认]
         raise "#{item['name']} 已标记状态存疑或不可食用，不能确认消耗。" if unsafe_statuses.include?(item['status']) || unsafe_statuses.include?(item['freshness'])
         raise "#{item['name']} 库存不足，无法确认该消耗量。" if used > item['quantity'].to_f
@@ -458,11 +483,34 @@ server.mount_proc '/' do |req, res|
         item = state['inventory'].find { |entry| entry['id'] == inventory_id }
         { 'inventoryId' => inventory_id, 'item' => item.dup, 'quantity' => totals[inventory_id] }
       end
+      calibration_ids = calibrations.map { |line| line['inventoryId'] }
+      raise '同一批次不能重复盘点或同时扣减。' unless calibration_ids.uniq == calibration_ids && (calibration_ids & totals.keys).empty?
+      calibrations.each do |line|
+        item = state['inventory'].find { |entry| entry['id'] == line['inventoryId'] }
+        raise '盘点库存已变化，请重新核对本项。' unless item && line['expectedItem'] == item
+        raise '存疑库存不能在制作确认中盘点。' if %w[不可食用 已确认不可食用 丢弃 变质 状态存疑 待确认].include?(item['freshness']) || %w[不可食用 已确认不可食用 丢弃 变质 状态存疑 待确认].include?(item['status'])
+        remaining = Float(line['remaining'])
+        raise '实际剩余量无效。' unless remaining.finite? && remaining >= 0
+        before << { 'inventoryId' => item['id'], 'item' => item.dup, 'quantity' => 0 }
+      end
       totals.each do |inventory_id, used|
         item = state['inventory'].find { |entry| entry['id'] == inventory_id }
         item['quantity'] = item['quantity'].to_f - used
-        item['quantityBasis'] = quantity_basis == 'estimated' || item['quantityBasis'] == 'estimated' ? 'estimated' : 'confirmed'
+        basis = consumption.find { |line| line['inventoryId'] == inventory_id }['basis'] || quantity_basis
+        item['lastConfirmedQuantity'] ||= before.find { |line| line['inventoryId'] == inventory_id }['item']['quantity'] if item['quantityBasis'] != 'estimated'
+        item['lastConfirmedAt'] ||= item['quantityBasisUpdatedAt'] || item['createdAt'] if item['quantityBasis'] != 'estimated'
+        item['quantityBasis'] = basis == 'estimated' || item['quantityBasis'] == 'estimated' ? 'estimated' : 'confirmed'
         item['quantityBasisUpdatedAt'] = Time.now.utc.iso8601
+        item['lastOperationId'] = operation_id
+      end
+      calibrations.each do |line|
+        item = state['inventory'].find { |entry| entry['id'] == line['inventoryId'] }
+        item['quantity'] = Float(line['remaining'])
+        item['quantityBasis'] = 'confirmed'
+        item['quantityBasisUpdatedAt'] = Time.now.utc.iso8601
+        item['lastConfirmedAt'] = item['quantityBasisUpdatedAt']
+        item['lastConfirmedQuantity'] = item['quantity']
+        item['lastOperationId'] = operation_id
       end
       state['inventory'].reject! do |item|
         quantity = Float(item['quantity'])
@@ -509,8 +557,8 @@ server.mount_proc '/' do |req, res|
       state['mealPlan']['lastCompleted'] = {
         'operationId' => operation_id,
         'recipe' => { 'title' => recipe['title'] || '本餐', 'servings' => recipe['servings'] || 1 },
-        'counts' => body['counts'] || {}, 'basis' => quantity_basis == 'estimated' ? 'reference' : 'actual',
-        'consumedNothing' => consumption.empty? && additions.empty?
+        'counts' => body['counts'] || {}, 'basis' => consumption.any? { |line| (line['basis'] || quantity_basis) == 'estimated' } ? 'reference' : 'actual',
+        'consumedNothing' => consumption.empty? && calibrations.empty? && additions.empty?
       }
       state['mealPlan']['active'] = nil
       state['mealPlan']['menu'] = []
@@ -574,6 +622,8 @@ server.mount_proc '/' do |req, res|
       file_path = File.join(ROOT, 'index.html')
     elsif req.path.match?(%r{\A/(app\.js|recipes\.js|styles\.css)\z})
       file_path = File.join(ROOT, req.path.sub(%r{\A/}, ''))
+    elsif req.path.match?(%r{\A/assets/[a-zA-Z0-9_/-]+\.(?:jpg|png|webp|json)\z}) && !req.path.include?('..')
+      file_path = File.join(ROOT, req.path.sub(%r{\A/}, ''))
     else
       json_response(res, 404, { error: '未找到接口或页面。' })
       next
@@ -584,10 +634,16 @@ server.mount_proc '/' do |req, res|
       next
     end
     res.status = 200
+    if file_path.match?(/\.(jpg|png|webp)\z/)
+      res['Content-Type'] = { '.jpg' => 'image/jpeg', '.png' => 'image/png', '.webp' => 'image/webp' }[File.extname(file_path)]
+      res.body = File.binread(file_path)
+      next
+    end
     res['Content-Type'] = file_path.end_with?('.css') ? 'text/css; charset=utf-8' : file_path.end_with?('.js') ? 'application/javascript; charset=utf-8' : 'text/html; charset=utf-8'
     res.body = File.read(file_path)
   rescue StandardError => e
     json_response(res, 422, { error: e.message })
+  end
   end
 end
 

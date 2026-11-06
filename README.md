@@ -39,3 +39,9 @@ DATA_PATH=/tmp/demo5018-recipe-test.json PORT=4568 ruby server.rb
 ## 其他能力
 
 首页自由问答可单独配置 DeepSeek。复制 `.env.example` 为 `.env` 并填写服务端 API Key；密钥只保存在服务端环境，不应写入前端资源。未配置时不影响本地菜谱流程。
+
+## 当前菜谱分支预览
+
+请从本目录运行 `zsh ./预览菜谱分支.command`，然后打开 <http://127.0.0.1:4570>。脚本只会停止已核实运行在原 Copilot 工作目录的旧 4570 预览；若端口由其他目录占用，会报错退出。旧目录文件不会删除。新预览使用独立示例库存，不修改 `data.json`；访问 <http://127.0.0.1:4570/api/status>，应看到 `service: demo5018-recipe`、`branch: moonxiang1222-recipe`、`isolatedData: true`。操作变化、验证结果与尚未完成的页面验收见 [菜谱体验调整](docs/recipe-ui-adjustments.md)。图片生成依用户最新要求暂缓，等待后续接入图片API。
+
+GitHub Desktop 中已添加本地仓库 `demo5018-recipe`，当前分支应为 `moonxiang1222-recipe`。2026-11-06 的 Fetch 显示 GitHub 尚无同名远端分支，因此完成修改并核对 `Changes` 后，先提交本分支的源码与测试，再用 **Publish branch** 发布该分支；不要把 `.env`、`data.json` 加入提交。之后通过 Pull Request 申请并入 `main`，不要强推或直接覆盖主干。远端 `main` 已有新的提交，当前分支与其在 `app.js`、`styles.css` 存在合并冲突；正式合并前需结合最新主干解决并重新测试。

@@ -224,3 +224,66 @@
   .completion-actions button{flex:0 1 auto}
 }
 @media(prefers-reduced-motion:reduce){.cooking-spatula{transition:none!important}}
+/* Compact action hierarchy and modal containment. */
+button,summary,input,select{font:inherit}
+button{touch-action:manipulation;cursor:pointer;max-width:100%}
+.primary-button{min-height:46px;font-size:15px;line-height:1.35;padding:10px 14px;white-space:normal}
+.secondary-button{min-height:38px;font-size:14px;line-height:1.35;padding:8px 12px}
+.text-button{min-height:38px;font-size:13px;padding:7px 5px}
+.header-action,.voice-button,.circle-button,.icon-button{min-width:40px;min-height:40px}
+.modal-layer{z-index:30;padding:12px;align-items:center}
+.modal{width:min(100%,480px);max-height:calc(100dvh - 24px);overflow:auto;overscroll-behavior:contain;padding:20px;min-width:0}
+.modal h2{font-size:22px;margin:0 0 12px}.modal h3{font-size:15px;margin:10px 0}
+.modal input:not([type=checkbox]):not([type=radio]),.modal select{min-width:0;max-width:100%;width:100%;min-height:40px;font-size:14px}
+.modal .confirm-choice{display:flex;align-items:center;gap:8px;min-height:40px;font-size:14px}
+.modal .confirm-choice input{width:18px;height:18px;flex:none;margin:0;accent-color:var(--green)}
+.modal-actions{flex-wrap:wrap}.modal-actions button{flex:0 1 auto}
+.exception-editor{padding:10px 12px;background:#faf6f1;border-radius:12px;margin:8px 0}
+.exception-choices{display:grid;gap:8px}.exception-choices button{text-align:left;background:white}
+.ingredient-picker{display:flex;gap:6px;flex-wrap:wrap}.consumption-count{position:static}
+.consumption-source-notice{font-size:12px}.inline-error:empty{display:none}
+.purchase-source-hint{display:flex;gap:4px;flex-wrap:wrap;background:var(--yellow-soft);padding:8px;border-radius:8px}
+.preference-strip{align-items:flex-start;font-size:12px}.preference-strip span{white-space:normal;overflow:visible;line-height:1.5}
+.cooking-page{display:block;padding-bottom:20px}.cooking-actions.has-finish{position:static;display:flex;flex-wrap:wrap;width:100%;transform:none;padding:10px 0;background:transparent;border:0;box-shadow:none}
+.cooking-actions.has-finish button{flex:1 1 auto;min-height:44px;height:auto}
+.current-step-heading{min-width:0}.current-step-heading>div{min-width:0}.flow-step-content{min-width:0;overflow-wrap:anywhere}
+.progress-label{flex-wrap:wrap;line-height:1.5}.progress-track{margin-top:20px}.cooking-spatula{transition:left .25s ease}
+.page-content{padding-bottom:100px}.sticky-actions{bottom:76px;max-width:calc(100vw - 24px)}
+@media(min-width:760px){
+ .full-button{width:auto;min-width:0}.modal .full-button{display:block;width:100%}
+ .cooking-page{max-width:900px}.current-cook-step{max-width:760px}.upcoming-steps{max-width:760px}
+ .meal-card-actions{display:flex;flex-wrap:wrap}.meal-card-actions button{flex:0 1 auto;width:auto;height:auto}
+ .sticky-actions{position:static;width:auto;transform:none;display:flex;box-shadow:none;border:0;padding:12px 0}
+}
+@media(max-width:350px){.modal{padding:16px}.modal-layer{padding:8px}.modal{max-height:calc(100dvh - 16px)}.recipe-search{flex-wrap:wrap}.recipe-search .voice-input-wrap{flex-basis:100%}.recipe-search button{min-width:0}.cooking-actions.has-finish button{flex-basis:calc(50% - 8px)}}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}.cooking-spatula{transition:none}}
+/* One preference decision per meal; no repeated registration. */
+.preference-strip{display:block;background:#f2f7f1;border:1px solid #dce9dc;border-radius:12px;padding:10px 12px;margin:8px 0}
+.preference-strip>span{display:block;font-size:12px;line-height:1.6;color:#53715b}
+.preference-actions{display:flex;gap:4px 10px;align-items:center;flex-wrap:wrap;margin-top:6px}
+.preference-actions .secondary-button{background:white;border:1px solid #c7dccb;color:#347653;font-size:14px;white-space:nowrap}
+.preference-actions .text-button{white-space:nowrap}
+.recipe-quick-controls{flex-wrap:wrap;overflow:visible;gap:6px 10px}
+.recipe-quick-controls select,.compact-control{height:38px;font-size:13px}
+.recipe-results-title{gap:8px}.recipe-results-title>div{min-width:0}.recipe-results-title>button,.error-card>button{flex:none;white-space:nowrap}
+.recipe-results-title p{line-height:1.6;font-size:12px}
+.consumption-exception-prompt{display:block;line-height:1.6}
+.consumption-exception-prompt .text-button{display:inline-block}
+#consumption-form>.primary-button{width:100%;margin-top:4px}
+#consumption-form>.text-button{display:block;margin:4px auto 0}
+#consumption-form .confirm-ingredient label{display:block;margin-top:8px;font-size:13px}
+#consumption-form .confirm-ingredient .confirm-choice{display:flex}
+.step-image-placeholder{padding:12px;font-size:12px}
+@media(min-width:760px){.preference-strip{max-width:900px}.cooking-actions.has-finish{justify-content:flex-start}.cooking-actions.has-finish button{flex:0 1 auto}.recipe-search button{flex:none}}
+@media(max-width:350px){.preference-strip{padding:9px}.preference-actions{gap:4px}.preference-actions .secondary-button{font-size:14px;padding:8px 10px}}
+/* Recipe search: the microphone is an icon control beside the text field. */
+.recipe-page .recipe-search{align-items:start;gap:8px;max-width:760px}
+.recipe-page .recipe-search .voice-input-wrap{flex:1 1 auto;min-width:0;flex-wrap:wrap;gap:5px}
+.recipe-page .recipe-search .voice-input-wrap>input{width:0;min-width:0;height:46px;font-size:15px}
+.recipe-page .recipe-search .voice-controls{flex:0 0 44px;width:44px}
+.recipe-page .recipe-search .recipe-voice-button{display:grid;place-items:center;width:44px;min-width:44px;height:46px;min-height:46px;padding:0;border-radius:12px;font-size:inherit;color:var(--ink)}
+.recipe-page .recipe-search .recipe-voice-button.is-recording{background:var(--brand-soft);border-color:var(--brand);color:var(--brand)}
+.recipe-page .recipe-search .recipe-voice-button svg{display:block}
+.recipe-page .recipe-search>button{flex:0 0 auto;min-width:100px;min-height:46px;padding:8px 12px;white-space:nowrap;font-size:15px}
+.recipe-page .active-meal-banner small{line-height:1.5;color:#466852}
+@media(max-width:350px){.recipe-page .recipe-search{flex-wrap:wrap}.recipe-page .recipe-search .voice-input-wrap{flex-basis:100%}.recipe-page .recipe-search>button{width:auto}}
