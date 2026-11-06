@@ -58,6 +58,37 @@ rescue JSON::ParserError
   raise '模型没有返回可读取的 JSON 内容，请重试。'
 end
 
+def restricted_foods(preferences)
+  (Array(preferences['allergies']) + Array(preferences['avoid'])).map { |item| item.to_s.strip.downcase }.reject(&:empty?).uniq
+end
+
+def mentions_restricted_food?(value, restricted)
+  text = value.to_s.downcase
+  restricted.any? { |food| text.include?(food) }
+end
+
+def recipe_mentions_restricted_food?(recipe, restricted)
+  text_parts = [recipe['title'], recipe['subtitle'], recipe['reason']] + Array(recipe['steps'])
+  Array(recipe['ingredients']).each do |ingredient|
+    text_parts << ingredient['name']
+    text_parts.concat(Array(ingredient['substitutes']))
+  end
+  text_parts.any? { |part| mentions_restricted_food?(part, restricted) }
+end
+
+def enforce_food_restrictions(result, preferences)
+  restricted = restricted_foods(preferences)
+  return result if restricted.empty?
+
+  original_recipes = Array(result['recipes'])
+  result['recipes'] = original_recipes.reject { |recipe| recipe_mentions_restricted_food?(recipe, restricted) }
+  result['shopping'] = Array(result['shopping']).reject { |item| mentions_restricted_food?(item['name'], restricted) }
+  if result['recipes'].length < original_recipes.length
+    result['summary'] = "#{result['summary']} 已按过敏提示和忌口排除不适合的食材。".strip
+  end
+  result
+end
+
 def ask_deepseek(question, state)
   api_key = ENV['DEEPSEEK_API_KEY']
   raise '未找到 DEEPSEEK_API_KEY，请先在 .env 中配置有效密钥。' if api_key.to_s.empty?
@@ -71,12 +102,14 @@ def ask_deepseek(question, state)
   context = {
     user_question: question,
     preferences: state.fetch('preferences', {}),
+    hard_constraints: { priority: '过敏提示和忌口 > 临期食材 > 现有库存 > 口味偏好', excluded_foods: restricted_foods(state.fetch('preferences', {})) },
     inventory: inventory_context,
     shopping: state.fetch('shopping', []).select { |item| item['status'] == 'pending' }
   }
   system_prompt = <<~PROMPT
     你是“智能厨房管家”，服务目标是减少食物浪费、提升家庭做饭效率。
-    根据用户问题、家庭库存和偏好，给出可执行建议。优先使用临期食材和现有库存；严格避开用户忌口。
+    根据用户问题、家庭库存和偏好，给出可执行建议。
+    【最高优先级安全规则】用户的“过敏提示”和“忌口”是硬性排除条件，优先级高于临期食材、库存利用和口味偏好。不得在菜名、食材、替代方案、步骤或补购清单中出现这些食材；无法满足时宁可不推荐菜谱并说明原因。只有通过该筛选后，才优先使用临期食材和现有库存。
     只返回 JSON，不能输出 Markdown。必须遵守以下结构：
     {
       "summary":"一句话建议",
@@ -131,7 +164,7 @@ def ask_deepseek(question, state)
   end
   content = payload.dig('choices', 0, 'message', 'content')
   raise 'DeepSeek 未返回内容，请重试。' if content.to_s.strip.empty?
-  normalize_agent_result(content)
+  enforce_food_restrictions(normalize_agent_result(content), state.fetch('preferences', {}))
 rescue Net::OpenTimeout, Net::ReadTimeout
   raise 'DeepSeek 请求超时，请稍后重试。'
 rescue SocketError
@@ -265,7 +298,9 @@ server.mount_proc '/' do |req, res|
       state['inventory'].reject! { |item| item['quantity'].to_f <= 0 }
       state['history'] << {
         'id' => new_id('cook'), 'type' => 'cook', 'title' => recipe['title'] || '完成烹饪',
-        'date' => Time.now.strftime('%Y-%m-%d'), 'detail' => "#{recipe['servings'] || 1} 人份"
+        'recipeId' => recipe['id'], 'recipeTitle' => recipe['title'] || '完成烹饪',
+        'imageEmoji' => recipe['imageEmoji'], 'date' => Time.now.strftime('%Y-%m-%d'),
+        'detail' => "#{recipe['servings'] || 1} 人份", 'consumption' => consumption
       }
       write_state(state)
       json_response(res, 200, state)
