@@ -11,6 +11,7 @@
     {"id":"shop-soy","name":"生抽","quantity":1,"unit":"瓶","category":"调味品","source":"菜谱导入 · 番茄鸡蛋面","status":"bought","completedAt":"2026-11-02","location":"冷藏","expiryDate":"2027-05-01"}
   ],
   "preferences": {"flavors":["清淡","微辣"],"avoid":["香菜"],"needs":["高蛋白"],"allergies":[],"reminder":true,"lowStockReminder":false,"dailyMealReminder":false},
+  "profile": {"name":"我的厨房","avatar":""},
   "favorites": [],
   "recipes": [],
   "history": [
