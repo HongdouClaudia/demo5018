@@ -8,6 +8,8 @@ vm.runInContext(fs.readFileSync(root+'/app.js','utf8').replace(/loadState\(\)\.c
 const run=s=>vm.runInContext(s,c);let assertions=0;
 const check=(s,v=true)=>{assert.deepEqual(JSON.parse(JSON.stringify(run(s))),v,s);assertions++;};
 async function main(){
+c.fetch=async()=>{throw new TypeError('Failed to fetch');};
+await assert.rejects(run("api('/api/state')"),/无法连接本地预览服务/);assertions++;
 const fixture=JSON.parse(fs.readFileSync(root+'/seed.json','utf8'));
 fixture.preferences={allergiesStatus:'none',dietStatus:'specified',allergies:[],avoid:['香菜'],flavors:['清淡'],defaultServings:2};
 run(`state=${JSON.stringify(fixture)};ensurePlan();mealPlan.menu=[{recipeId:'tomato-egg-rice',servings:2},{recipeId:'tomato-egg-dinner',servings:2}];const allocation=collectMenuAllocations();mealPlan.active={id:'test',operationId:'op-test',status:'cooking',dishes:allocation.dishes,timeline:allocation.timeline,stepIndex:0,servings:2,meal:'dinner'};`);
@@ -48,6 +50,10 @@ run(`mealPlan.request.preferences={allergies:[],avoid:[],flavors:['微辣']};sta
 check(`preferences().allergies`,['花生']);check(`preferences().avoid`,['香菜']);
 run(`delete mealPlan.request.preferences;currentTab='recipes';recipeScreen='browse';`);
 check(`recipePage().includes('无修改，与个人登记一致')`);
+run(`recommendationLoading=true;mealPlan.results=[];`);
+check(`recipePage().includes('正在理解需求并生成文字菜谱')`);
+check(`recipePage().includes('这组条件下没有更多方案')`,false);
+run(`recommendationLoading=false;`);
 check(`voiceControls('dish-query','用餐需求').includes('recipe-voice-button')`);
 check(`voiceControls('dish-query','用餐需求').includes('<svg')`);
 check(`recipePage().includes('说说家里有什么，想吃什么')`);
@@ -87,6 +93,9 @@ check(`mealPlan.menu.map(item=>item.recipeId)`,['tomato-egg-rice','tomato-egg-di
 await Promise.resolve();
 run(`mealPlan.request.mode='explore';mealPlan.request.allowAdditionalIngredients=true;mealPlan.request.dish='';mealPlan.intent=null;state.inventory=[];state.preferences.avoid=['香菜'];const testRecipe={title:'家常土豆炖牛肉',recommendationSource:'AI',mealTypes:['dinner'],duration:30,waitMinutes:0,servings:2,appliances:['炒锅'],ingredients:[{name:'牛肉',quantity:200,unit:'g'},{name:'土豆',quantity:1,unit:'个'}],steps:[]};`);
 check(`rankedRecipes('dinner',[testRecipe]).length`,1);
+run(`mealPlan.intent={ingredients:['库存食材'],sourceText:''};`);
+check(`rankedRecipes('dinner',[testRecipe]).length`,1);
+run(`mealPlan.intent=null;`);
 check(`rankedRecipes('dinner',[{...testRecipe,ingredients:[...testRecipe.ingredients,{name:'香菜',quantity:1,unit:'棵'}]}]).length`,0);
 run(`mealPlan.request.mode='use-first';`);
 check(`rankedRecipes('dinner',[testRecipe]).length`,0);
@@ -105,6 +114,80 @@ check(`menuShoppingCandidates().find(i=>i.name==='胡萝卜').suggestedQuantity`
 run(`openMenuShopping();`);
 check(`document.getElementById('modal-layer').innerHTML.includes('调味料提醒')`);
 check(`document.getElementById('modal-layer').innerHTML.includes('预计需要补买')`);
+run(`imageWorkerBusy=true;mealPlan.aiRecipes=[{id:'image-test',title:'测试菜',ingredients:[],steps:[],servings:2}];state.generatedRecipeImages={};queueRecipeImages(['image-test','image-test']);`);
+check(`imageQueue.filter(id=>id==='image-test').length`,1);
+check(`imageMarkup(recipeForView(recipeById('image-test'))).includes('正在搜索配图')`);
+run(`imageQueue.length=0;imageQueued.delete('image-test');imageErrors.set('image-test','连接失败');`);
+check(`imageMarkup(recipeForView(recipeById('image-test'))).includes('连接失败')`);
+run(`queueRecipeImages(['image-test']);`);check(`imageQueue.length`,0);
+run(`queueRecipeImages(['image-test'],true);`);check(`imageQueue.length`,1);
+run(`imageQueue.length=0;imageQueued.clear();imageWorkerBusy=false;`);
+run(`state.generatedRecipeImages['image-test']={imageUrl:'https://example.com/dish.jpg',imageType:'web-search',imageSource:'示例网站',imageSourceUrl:'https://example.com/recipe',imageLicense:'授权待核对'};`);
+check(`imageMarkup(recipeForView(recipeById('image-test'))).includes('示例网站')`);
+check(`imageMarkup(recipeForView(recipeById('image-test'))).includes('授权待核对')`);
+run(`queueRecipeImages(['image-test']);`);check(`imageQueue.length`,0);
+
+// Explore rotation only excludes the current batch; older dishes may return.
+c.AbortController=AbortController;
+run(`currentTab='home';state.preferences={allergiesStatus:'none',dietStatus:'none',allergies:[],avoid:[]};mealPlan.active=null;mealPlan.request={dish:'',servings:2,duration:30,mode:'explore',allowAdditionalIngredients:true};mealPlan.intent=null;const oldDish={...testRecipe,title:'旧菜',ingredients:[{name:'土豆',quantity:1,unit:'个'}]},currentDish={...testRecipe,title:'当前菜',ingredients:[{name:'鸡蛋',quantity:1,unit:'个'}]};oldDish.id=stableRecipeId(recommendationKey(oldDish));currentDish.id=stableRecipeId(recommendationKey(currentDish));mealPlan.aiRecipes=[oldDish,currentDish];mealPlan.results=[currentDish.id];mealPlan.seenBySignature[recommendationSignature('dinner')]=[recommendationKey(oldDish),recommendationKey(currentDish)];let sentOptions;api=async(url,options)=>{if(url==='/api/recipe-recommendation'){sentOptions=JSON.parse(options.body);return {recipes:[oldDish,currentDish],intent:{},summary:'测试'};}return {revision:state.revision};};persist=async()=>{};`);
+await run(`refreshRecommendations({rotate:true})`);
+check(`mealPlan.results.length`,1);
+check(`recipeById(mealPlan.results[0]).title`,'旧菜');
+check(`sentOptions.exclude.includes('当前菜')`);
+check(`sentOptions.exclude.includes('旧菜')`,false);
+run(`const imported={id:'draft-unit',title:'用户填写的菜名',sourceText:'番茄炒蛋原文',sourceUrl:'',ingredients:[],steps:[],duration:null,servings:2,uncertainties:[]};api=async()=>({title:'AI菜名',ingredients:[{name:'番茄',quantity:2,unit:'个'}],auxiliaries:[],seasonings:[],steps:['炒番茄'],duration:null,servings:null,appliances:[],uncertainties:[]});persist=async()=>{};`);
+await run(`parseDraftWithDeepSeek(imported)`);
+check(`imported.title`,'用户填写的菜名');check(`imported.steps`,['炒番茄']);check(`imported.parseStatus`,'ai-extracted');
+run(`api=async()=>{throw new Error('请粘贴正文');};`);await run(`parseDraftWithDeepSeek(imported)`);
+check(`imported.parseStatus`,'parse-failed');check(`imported.sourceText`,'番茄炒蛋原文');check(`imported.steps`,['炒番茄']);
+run(`currentTab='recipes';mealPlan.menu=[];`);
+check(`recipeCard('tomato-egg-pancake').includes('查看做法')`);
+check(`recipeCard('tomato-egg-pancake').includes('加入本餐')`);
+check(`recipeCard('tomato-egg-pancake').includes('meal-composition')`,false);
+// A recommendation is one dish; source modes use recorded inventory, not a typed claim.
+run(`state.preferences={allergiesStatus:'none',dietStatus:'none',allergies:[],avoid:[]};mealPlan.request={dish:'',servings:2,duration:30,mode:'use-first',allowAdditionalIngredients:true};mealPlan.intent=null;state.inventory=[{name:'番茄',quantity:2,unit:'个',freshness:'新鲜',expiryDate:'2020-01-01'},{name:'鸡蛋',quantity:2,unit:'个',freshness:'新鲜'}];const singleDish={id:'single-check',title:'番茄炒蛋',recommendationSource:'AI',mealTypes:['dinner'],duration:15,waitMinutes:0,servings:2,appliances:[],ingredients:[{name:'番茄',quantity:1,unit:'个'},{name:'鸡蛋',quantity:2,unit:'个'}],auxiliaries:[],seasonings:[],steps:[],reason:'酸甜开胃'};`);
+check(`rankedRecipes('dinner',[singleDish]).length`,1);
+check(`rankedRecipes('dinner',[{...singleDish,title:'番茄炒蛋 + 米饭'}]).length`,0);
+check(`rankedRecipes('dinner',[{...singleDish,title:'番茄炒蛋配蒜蓉西兰花'}]).length`,0);
+check(`rankedRecipes('dinner',[{...singleDish,dishes:['番茄炒蛋','米饭']}]).length`,0);
+run(`mealPlan.intent={ingredients:['土豆']};`);
+check(`rankedRecipes('dinner',[{...singleDish,ingredients:[{name:'土豆',quantity:1,unit:'个'}]}]).length`,0);
+run(`mealPlan.intent=null;`);
+check(`rankedRecipes('dinner',[{...singleDish,seasonings:[{name:'食用油',quantity:null,unit:'适量'}]}]).length`,1);
+run(`mealPlan.request.mode='supplement';`);
+check(`rankedRecipes('dinner',[singleDish]).length`,0);
+check(`rankedRecipes('dinner',[{...singleDish,ingredients:[...singleDish.ingredients,{name:'土豆',quantity:1,unit:'个'}]}]).length`,1);
+check(`rankedRecipes('dinner',[{...singleDish,ingredients:[{name:'土豆',quantity:1,unit:'个'}]}]).length`,0);
+run(`state.recipes=[singleDish];currentTab='recipes';mealPlan.menu=[];mealPlan.request.mode='use-first';`);
+check(`recipeCard('single-check').includes('建议优先用')`);
+check(`recipeCard('single-check').includes('快手菜')`);
+check(`recipeCard('single-check').includes('酸甜开胃')`);
+check(`recipeCard('single-check').includes('时令菜')`,false);
+run(`state.inventory=[];mealPlan.request.mode='explore';`);
+check(`rankedRecipes('dinner',[singleDish]).length`,1);
+// 标签依据已知菜谱与库存状态分别呈现，主食不淹没独立菜品。
+run(`state.inventory=[{name:'番茄',quantity:2,unit:'个',freshness:'新鲜',expiryDate:'2020-01-01'},{name:'鸡蛋',quantity:2,unit:'个',freshness:'新鲜'}];mealPlan.request={dish:'',servings:2,duration:30,mode:'use-first',allowAdditionalIngredients:true};mealPlan.intent=null;singleDish.steps=['切菜','炒熟'];state.recipes=[singleDish];`);
+check(`recipeCard('single-check').includes('tag-priority')`);
+check(`recipeCard('single-check').includes('tag-quick')`);
+check(`recipeCard('single-check').includes('tag-steps')`);
+check(`recipeCard('single-check').includes('tag-ready')`);
+run(`singleDish.seasonings=[{name:'食用油',quantity:null,unit:'适量'}];`);
+check(`recipeCard('single-check').includes('调味料：食用油 · 请自行核对')`);
+run(`singleDish.seasonings=[];`);
+check(`selectVariedDishes([{title:'鸡蛋炒饭'},{title:'牛肉盖饭'},{title:'番茄炒蛋'},{title:'清蒸鱼'}]).map(x=>x.title)`,['番茄炒蛋','清蒸鱼','鸡蛋炒饭']);
+check(`selectVariedDishes([{title:'鸡蛋炒饭'},{title:'牛肉盖饭'}]).length`,1);
+run(`mealPlan.request.dish='想吃炒饭';`);
+check(`selectVariedDishes([{title:'鸡蛋炒饭'},{title:'牛肉盖饭'}]).length`,2);
+// 调味料只做提醒，不参与库存筛选或排序；过敏限制仍生效。
+run(`state.preferences={allergiesStatus:'none',dietStatus:'none',allergies:[],avoid:[]};state.inventory=[{name:'番茄',quantity:2,unit:'个',freshness:'新鲜'},{name:'鸡蛋',quantity:2,unit:'个',freshness:'新鲜'}];mealPlan.request={dish:'',servings:2,duration:30,mode:'use-first',allowAdditionalIngredients:true};mealPlan.intent=null;singleDish.seasonings=[{name:'食用油',quantity:null,unit:'适量'},{name:'盐',quantity:null,unit:'适量'}];singleDish.reason='家常做法';state.recipes=[singleDish];currentTab='recipes';`);
+check(`rankedRecipes('dinner',[singleDish]).length`,1);
+check(`recipeCard('single-check').includes('调味料：食用油、盐 · 请自行核对')`);
+check(`recipeCard('single-check').includes('调味料待确认：')`,false);
+run(`const randomBefore=Math.random;Math.random=()=>0;const scoreWithout=rankedRecipes('dinner',[{...singleDish,seasonings:[]}])[0];const scoreWith=rankedRecipes('dinner',[singleDish])[0];Math.random=randomBefore;`);
+check(`scoreWithout.score===scoreWith.score`);
+check(`scoreWithout.stockGaps===scoreWith.stockGaps`);
+run(`state.preferences.avoid=['盐'];`);check(`rankedRecipes('dinner',[singleDish]).length`,0);
+run(`state.preferences.avoid=[];mealPlan.request.mode='explore';`);check(`recipeCard('single-check').includes('调味料：食用油、盐 · 请自行核对')`);
 console.log(`${assertions} client assertions passed.`);
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

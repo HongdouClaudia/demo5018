@@ -71,6 +71,120 @@ class RecipeServerTest < Minitest::Test
     assert_equal 'bought', result['shopping'].find { |item| item['id']=='vague' }['status']
     assert_equal 'archived', result['shopping'].find { |item| item['id']=='known' }['status']
   end
+  def test_serpapi_search_returns_safe_source_and_keeps_key_private
+    previous = ENV['IMAGE_API_KEY']
+    ENV['IMAGE_API_KEY'] = 'test-key'
+    client = Object.new
+    class << client
+      attr_accessor :use_ssl, :verify_mode, :open_timeout, :read_timeout, :request_uri
+      def request(request)
+        self.request_uri = request.path
+        response = Net::HTTPOK.new('1.1', '200', 'OK')
+        response.instance_variable_set(:@read, true)
+        response.body = JSON.generate(images_results: [
+          {original:'javascript:bad', link:'https://example.com/a'},
+          {original:'https://example.com/food.jpg', link:'https://example.com/recipe', source:'美食网站', title:'番茄炒蛋'}
+        ])
+        response
+      end
+    end
+    status, result = Net::HTTP.stub(:new, client) { call('/api/recipe-image', {title:'番茄炒蛋'}) }
+    assert_equal 200, status
+    assert_equal 'web-search', result['imageType']
+    assert_equal 'https://example.com/food.jpg', result['imageUrl']
+    assert_equal 'https://example.com/recipe', result['imageSourceUrl']
+    assert_equal '美食网站', result['imageSource']
+    assert_equal '授权待核对', result['imageLicense']
+    assert_includes client.request_uri, 'engine=google_images'
+    refute_includes JSON.generate(result), 'test-key'
+  ensure
+    ENV['IMAGE_API_KEY'] = previous
+  end
+  def test_serpapi_without_key_returns_clear_error
+    previous = ENV['IMAGE_API_KEY']
+    ENV['IMAGE_API_KEY'] = ''
+    status, result = call('/api/recipe-image', {title:'测试'})
+    assert_equal 422, status
+    assert_match(/未配置 SerpApi/, result['error'])
+  ensure
+    ENV['IMAGE_API_KEY'] = previous
+  end
+  def test_serpapi_unauthorized_does_not_leak_key
+    previous = ENV['IMAGE_API_KEY']
+    ENV['IMAGE_API_KEY'] = 'private-test-key'
+    client = Object.new
+    class << client
+      attr_accessor :use_ssl, :verify_mode, :open_timeout, :read_timeout
+      def request(_request); Net::HTTPUnauthorized.new('1.1', '401', 'Unauthorized'); end
+    end
+    status, result = Net::HTTP.stub(:new, client) { call('/api/recipe-image', {title:'测试'}) }
+    assert_equal 422, status
+    assert_match(/SerpApi.*401/, result['error'])
+    refute_includes result['error'], 'private-test-key'
+  ensure
+    ENV['IMAGE_API_KEY'] = previous
+  end
+  def test_import_text_uses_deepseek_and_preserves_unknown_quantities
+    previous = ENV['DEEPSEEK_API_KEY']; ENV['DEEPSEEK_API_KEY'] = 'test-key'
+    client = Object.new
+    class << client
+      attr_accessor :use_ssl, :verify_mode, :open_timeout, :read_timeout, :body
+      def request(request)
+        self.body = JSON.parse(request.body)
+        result = {title:'番茄炒蛋', ingredients:[{name:'番茄',quantity:2,unit:'个'},{name:'盐',quantity:nil,unit:'适量'}], auxiliaries:[], seasonings:[], steps:['切番茄','炒熟鸡蛋后加入番茄'], duration:nil, servings:nil, appliances:[], uncertainties:[]}
+        response = Net::HTTPOK.new('1.1','200','OK'); response.instance_variable_set(:@read,true)
+        response.body = JSON.generate(choices:[{message:{content:JSON.generate(result)}}]);response
+      end
+    end
+    status, result = Net::HTTP.stub(:new,client) { call('/api/recipe-import/parse',{sourceText:'番茄2个，盐适量。切番茄，炒熟鸡蛋后加入番茄。'}) }
+    assert_equal 200,status
+    assert_equal '番茄炒蛋',result['title']
+    assert_equal 2,result['steps'].length
+    assert_nil result['ingredients'][1]['quantity']
+    assert_nil result['duration']
+    assert_equal 'json_object',client.body['response_format']['type']
+    refute_includes JSON.generate(result),'test-key'
+  ensure
+    ENV['DEEPSEEK_API_KEY'] = previous
+  end
+  def test_import_rejects_local_and_unsupported_url
+    previous = ENV['DEEPSEEK_API_KEY']; ENV['DEEPSEEK_API_KEY'] = 'test-key'
+    status, result = call('/api/recipe-import/parse',{sourceUrl:'http://127.0.0.1/private'})
+    assert_equal 422,status
+    assert_match(/HTTPS/,result['error'])
+    status, result = call('/api/recipe-import/parse',{sourceUrl:'https://example.com/recipe'})
+    assert_equal 422,status
+    assert_match(/粘贴菜谱正文/,result['error'])
+  ensure
+    ENV['DEEPSEEK_API_KEY'] = previous
+  end
+  def test_import_link_rejects_private_addresses
+    error = Resolv.stub(:getaddresses, ['127.0.0.1']) { assert_raises(RuntimeError) { fetch_recipe_text('https://xhslink.com/test') } }
+    assert_match(/无法安全读取/, error.message)
+  end
+  def test_import_does_not_treat_short_share_text_as_recipe_when_link_unavailable
+    previous = ENV['DEEPSEEK_API_KEY']; ENV['DEEPSEEK_API_KEY'] = 'test-key'
+    error = stub(:fetch_recipe_text, ->(_url) { raise '链接无法读取' }) do
+      assert_raises(RuntimeError) { parse_imported_recipe({'sourceUrl'=>'https://xhslink.com/test','sourceText'=>'来看这个 https://xhslink.com/test'}) }
+    end
+    assert_equal '链接无法读取', error.message
+  ensure
+    ENV['DEEPSEEK_API_KEY'] = previous
+  end
+  def test_connection_refused_has_clear_error
+    previous = ENV['DEEPSEEK_API_KEY']
+    ENV['DEEPSEEK_API_KEY'] = 'test-key'
+    client = Object.new
+    class << client
+      attr_accessor :use_ssl, :verify_mode, :open_timeout, :read_timeout
+      def request(_request); raise Errno::ECONNREFUSED; end
+    end
+    status, result = Net::HTTP.stub(:new, client) { call('/api/recipe-recommendation', {meal:'dinner',servings:2,duration:30,mode:'explore'}) }
+    assert_equal 422, status
+    assert_equal '无法连接菜谱 AI 服务，请检查网络。', result['error']
+  ensure
+    ENV['DEEPSEEK_API_KEY'] = previous
+  end
   def test_reference_idempotent_and_undo
     before = stock
     assert_equal 200, cook.first

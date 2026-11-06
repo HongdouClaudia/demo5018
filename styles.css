@@ -310,3 +310,49 @@ button{touch-action:manipulation;cursor:pointer;max-width:100%}
 
 /* 我的页面：仅覆盖该页新增的展示样式 */
 .profile-cover{border-radius:22px;padding:17px 17px 15px;background:linear-gradient(135deg,#f6d5c0,#ffece1 57%,#e5f2e9);margin-bottom:18px;overflow:hidden}.profile-cover-top{display:flex;justify-content:space-between;color:#986957;font-size:11px}.profile-kicker{letter-spacing:.12em}.profile-more{font-size:17px;line-height:.5}.profile-person{display:flex;align-items:center;gap:12px;margin:14px 0 17px}.profile-person .profile-avatar{width:58px;height:58px;border:3px solid rgba(255,255,255,.78);border-radius:20px;background:linear-gradient(135deg,#f0b896,#df714f);box-shadow:0 6px 13px rgba(158,79,53,.15);display:grid;place-items:center;font-size:28px}.profile-person h2{font-size:20px;margin:0}.profile-person p{font-size:12px;color:#8d6c5d;margin:4px 0 0}.profile-summary{display:grid;grid-template-columns:1fr 1px 1fr 1px 1.2fr;background:rgba(255,255,255,.58);border:1px solid rgba(255,255,255,.76);border-radius:14px;padding:10px 5px;align-items:center;text-align:center}.profile-summary i{height:23px;background:rgba(156,109,87,.16)}.profile-summary b{display:block;color:#5d4236;font-size:15px;white-space:nowrap}.profile-summary span{display:block;margin-top:3px;color:#9b7a6b;font-size:10px}.profile-preferences-card{background:#fff;border:1px solid var(--line);border-radius:18px;padding:15px;margin-bottom:12px;box-shadow:0 3px 12px rgba(70,47,31,.035)}.profile-card-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-bottom:13px;border-bottom:1px solid var(--line)}.profile-card-heading>div{display:flex;align-items:center;gap:9px}.profile-icon{width:33px;height:33px;display:grid;place-items:center;color:var(--brand);background:var(--brand-soft);border-radius:11px;font-size:16px}.profile-card-heading h2{font-size:15px;margin:0}.profile-card-heading p{font-size:11px;color:var(--sub);line-height:1.4;margin:3px 0 0}.profile-card-heading button{border:0;background:var(--brand-soft);color:var(--brand);padding:6px 10px;border-radius:9px;font-size:12px}.preference-group{display:flex;gap:11px;padding:12px 0 0;align-items:flex-start}.preference-group>span{font-size:12px;color:var(--sub);width:84px;flex:none;padding-top:4px}.preference-tags{display:flex;flex:1;gap:5px;flex-wrap:wrap}.preference-tags em{font-style:normal;padding:4px 8px;background:var(--green-soft);color:var(--green);border-radius:99px;font-size:11px}.preference-tags.muted em{background:#f4f1ee;color:#7e766f}.preference-tags small{font-size:11px;color:#aba49e;padding-top:4px}.reminder-row{display:flex;align-items:center;justify-content:space-between;margin-top:13px;padding-top:13px;border-top:1px solid var(--line)}.reminder-row strong{display:block;font-size:13px}.reminder-row span{display:block;font-size:11px;color:var(--sub);margin-top:3px}.profile-section-title{margin-top:20px}.profile-favorites{padding:3px 15px}.profile-favorites .inventory-item{min-height:61px}.row-arrow{color:#b1aaa4;font-size:24px}.profile-empty{display:flex;align-items:center;gap:10px;padding:16px 0}.profile-empty>span{width:36px;height:36px;display:grid;place-items:center;border-radius:12px;background:var(--brand-soft);color:var(--brand);font-size:21px}.profile-empty>div{min-width:0;flex:1}.profile-empty b{font-size:13px}.profile-empty p{font-size:11px;color:var(--sub);line-height:1.45;margin:3px 0 0}.profile-empty button{border:0;background:transparent;color:var(--brand);font-size:12px;white-space:nowrap}.profile-history{padding:2px 15px}.history-row{display:flex;gap:10px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}.history-row:last-child{border:0}.history-icon{width:31px;height:31px;display:grid;place-items:center;border-radius:10px;background:var(--green-soft);color:var(--green);font-weight:700}.history-icon.purchase{background:var(--brand-soft);color:var(--brand)}.history-row strong{font-size:13px}.history-row p{font-size:11px;color:var(--sub);margin:3px 0 0}
+.image-generation-error{color:#7a695d;font-size:12px;max-width:90%;text-align:center;line-height:1.4}
+.recipe-image-credit{margin:5px 10px 2px;font-size:11px;line-height:1.5;color:var(--sub);overflow-wrap:anywhere}
+.recipe-image-credit a{color:var(--brand)}
+
+#recipe-editor-form textarea,#recipe-import-form textarea{display:block;width:100%;max-width:100%;min-width:0;border:1px solid var(--line);border-radius:10px;padding:11px;font:inherit;line-height:1.5;background:white;resize:vertical}
+
+/* 吃什么：推荐信息与操作保持简洁。 */
+.discover-page .recipe-subtitle{margin:4px 0 14px;line-height:1.5;color:var(--sub)}
+.discover-page .recipe-tabs{margin-bottom:16px}
+.discover-page .recipe-search{margin-bottom:10px}
+.discover-page .recipe-quick-controls{margin-bottom:10px}
+.discover-page .preference-strip{margin:10px 0 16px}
+.discover-page .meal-mode-panel{padding:0;margin:0 0 16px;gap:8px}
+.discover-page .meal-mode-panel>strong{font-size:14px}
+.discover-page .meal-mode-panel>small{font-size:12px;line-height:1.45}
+.discover-page .recipe-results-title{margin:20px 0 12px;align-items:end}
+.discover-page .recipe-results-title p{margin-top:4px}
+.recipe-page .meal-grid{gap:14px}
+.recipe-page .meal-card{display:flex;flex-direction:column;border-radius:18px}
+.recipe-page .meal-card-content{display:flex;flex:1;flex-direction:column;padding:14px;min-width:0}
+.recipe-page .meal-card-heading{align-items:flex-start}
+.recipe-page .meal-card h3{font-size:17px;line-height:1.4;overflow-wrap:anywhere}
+.recipe-page .meal-card-meta{margin:8px 0 4px;gap:8px;font-size:12px}
+.recipe-page .meal-card-meta span{padding:4px 8px;border-radius:7px;background:#f5f3ef}
+.recipe-page .stock-state{margin:7px 0;color:#597665;line-height:1.5;overflow-wrap:anywhere}
+.recipe-page .meal-card .trend-note{margin:0 0 6px;font-size:11px;color:var(--sub)}
+.recipe-page .meal-card-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:auto;padding-top:10px}
+.recipe-page .meal-card-actions button{width:100%;min-width:0;min-height:42px;white-space:normal}
+.recipe-page .image-error-details{max-width:94%;font-size:11px;text-align:center;overflow-wrap:anywhere}
+.recipe-page .image-error-details summary{cursor:pointer;color:var(--sub);padding:2px}
+.recipe-page .image-error-details small{display:block;line-height:1.4}
+@media(max-width:350px){.recipe-page .meal-card-content{padding:11px}.recipe-page .meal-card-actions{gap:6px}.recipe-page .meal-card-actions button{padding:7px 5px;font-size:13px}}
+.discover-page .preference-strip{display:flex;align-items:center;justify-content:space-between;gap:8px 16px;flex-wrap:wrap}
+.discover-page .preference-strip>span{flex:1 1 260px}
+.discover-page .preference-actions{margin-top:0}
+.discover-page .meal-card .dish-photo.image-missing{aspect-ratio:auto;min-height:110px;padding:12px}
+.recipe-page .recipe-card-tags{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 2px}
+.recipe-page .recipe-card-tag{display:inline-flex;align-items:center;padding:4px 9px;border-radius:999px;background:#edf6ed;color:#3d7553;font-size:12px;line-height:1.3}
+.recipe-page .recipe-card-reason{margin:8px 0 2px;color:var(--sub);font-size:12px;line-height:1.55;overflow-wrap:anywhere}
+.recipe-page .recipe-card-tag.tag-priority{background:#fff0dd;color:#8e5106}
+.recipe-page .recipe-card-tag.tag-quick{background:#eaf6ed;color:#28683e}
+.recipe-page .recipe-card-tag.tag-steps{background:#edf1fc;color:#415992}
+.recipe-page .recipe-card-tag.tag-ready{background:#e5f4f1;color:#1e6a5d}
+.recipe-page .recipe-card-tag.tag-purchase{background:#fff0ed;color:#a64436}
+.recipe-page .recipe-card-tag.tag-check{background:#f5effa;color:#6d4d82}
+.recipe-page .recipe-card-seasonings{margin:8px 0 2px;color:#76675b;font-size:12px;line-height:1.55;overflow-wrap:anywhere}
