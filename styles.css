@@ -16,3 +16,4 @@
 .nutrition-category{display:grid;grid-template-columns:1fr auto 16px;align-items:center;gap:8px;width:100%;padding:10px 11px;border:1px solid var(--line);border-radius:12px;background:#fffaf6;color:var(--ink);text-align:left}.nutrition-category strong{font-size:12px}.nutrition-category span{font-size:11px;color:var(--sub);white-space:nowrap}.nutrition-category>b{font-size:18px;font-weight:400;color:var(--brand)}
 .diet-tip-text,.diet-tip-note{text-align:center}.diet-tip-text{line-height:1.65;padding:3px 4px}.diet-tip-note{justify-content:center}
 .diet-tip-card .tip-shopping-button{display:block;margin:10px auto 0}
+.image-credit{text-align:right;font-size:10px;color:var(--sub);margin:-6px 3px 10px}.image-credit a{color:var(--brand);text-decoration:none}

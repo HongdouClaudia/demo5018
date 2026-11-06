@@ -28,11 +28,11 @@
 
 - Ruby
 - DeepSeek API Key（使用 AI 菜谱和问答功能时需要）
-- 豆包火山方舟图片生成 API Key（可选；配置 `IMAGE_API_KEY` 后，新生成的菜谱会自动生成并缓存菜品图片）
+- SerpApi Key（可选；配置 `SERPAPI_API_KEY` 后，新菜谱会自动搜索菜品图片并显示来源）
 
 ### 启动
 
-1. 复制 `.env.example` 为 `.env`，填写 DeepSeek Key；如需自动生成菜品图，再填写豆包图片生成 Key 和模型 ID。
+1. 复制 `.env.example` 为 `.env`，填写 DeepSeek Key；如需自动搜索菜品图片，再填写 SerpApi Key。
 2. 在项目目录运行：
 
    ```sh

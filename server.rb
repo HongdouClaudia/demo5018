@@ -7,8 +7,6 @@ require 'net/http'
 require 'uri'
 require 'openssl'
 require 'fileutils'
-require 'base64'
-require 'digest'
 
 ROOT = File.expand_path(__dir__)
 DATA_PATH = File.join(ROOT, 'data.json')
@@ -144,53 +142,51 @@ def new_id(prefix)
   "#{prefix}-#{Time.now.to_i}-#{rand(1000..9999)}"
 end
 
-def generate_recipe_image(recipe)
-  api_key = ENV['IMAGE_API_KEY']
-  raise '未找到 IMAGE_API_KEY，请在本地 .env 配置豆包图片生成密钥。' if api_key.to_s.empty?
+def search_recipe_image(recipe)
+  api_key = ENV['SERPAPI_API_KEY']
+  raise '未找到 SERPAPI_API_KEY，请在本地 .env 配置 SerpApi 密钥。' if api_key.to_s.empty?
   title = recipe['title'].to_s.strip
-  raise '菜谱名称为空，无法生成图片。' if title.empty?
+  raise '菜谱名称为空，无法搜索图片。' if title.empty?
   ingredients = Array(recipe['ingredients']).map { |item| item.is_a?(Hash) ? item['name'].to_s : item.to_s }.reject(&:empty?)
-  cache_key = Digest::SHA256.hexdigest(([title] + ingredients.sort).join('|'))
-  image_dir = File.join(ROOT, 'assets', 'generated')
-  image_path = File.join(image_dir, "#{cache_key}.jpg")
-  return "assets/generated/#{cache_key}.jpg" if File.exist?(image_path)
-
-  prompt = "写实家常菜摄影，一份#{title}，主要食材为#{ingredients.join('、')}。整道菜盛在简洁的白色餐盘中，温暖自然窗边光，浅米色餐桌背景，构图干净，菜品真实诱人，适合手机菜谱卡片。只呈现菜肴，不要文字、标签、logo、水印或拼贴。"
-  uri = URI('https://ark.cn-beijing.volces.com/api/v3/images/generations')
+  query = [title, ingredients.join(' '), '菜品实拍'].reject(&:empty?).join(' ')
+  params = URI.encode_www_form(engine: 'google_images', q: query, api_key: api_key, hl: 'zh-cn', gl: 'cn')
+  uri = URI("https://serpapi.com/search.json?#{params}")
   http = Net::HTTP.new(uri.host, uri.port)
   http.use_ssl = true
   http.verify_mode = OpenSSL::SSL::VERIFY_PEER
-  http.open_timeout = 15
-  http.read_timeout = 180
-  request = Net::HTTP::Post.new(uri)
-  request['Authorization'] = "Bearer #{api_key}"
-  request['Content-Type'] = 'application/json'
-  request.body = JSON.generate({
-    model: ENV.fetch('IMAGE_MODEL', 'doubao-seedream-4-0-250828'),
-    prompt: prompt,
-    size: '2K',
-    response_format: 'b64_json',
-    output_format: 'jpeg',
-    watermark: false
-  })
-  response = http.request(request)
+  http.open_timeout = 10
+  http.read_timeout = 30
+  response = http.get(uri.request_uri)
   payload = JSON.parse(response.body)
   unless response.is_a?(Net::HTTPSuccess)
-    raise(payload.dig('error', 'message') || "豆包图片接口请求失败（HTTP #{response.code}）。")
+    raise(payload['error'] || "SerpApi 图片搜索失败（HTTP #{response.code}）。")
   end
-  encoded = payload.dig('data', 0, 'b64_json')
-  raise '豆包没有返回图片数据，请检查模型权限和接口配置。' if encoded.to_s.empty?
-  image_bytes = Base64.decode64(encoded)
-  raise '生成的图片数据为空或格式无效。' unless image_bytes.start_with?("\xFF\xD8".b)
-  FileUtils.mkdir_p(image_dir)
-  File.binwrite(image_path, image_bytes)
-  "assets/generated/#{cache_key}.jpg"
+  if payload['error']
+    raise payload['error'].to_s
+  end
+  result = Array(payload['images_results']).find do |image|
+    next false if image['unsafe'] == true
+    begin
+      image_uri = URI(image['thumbnail'].to_s)
+      image_uri.is_a?(URI::HTTPS) && image_uri.host
+    rescue URI::InvalidURIError
+      false
+    end
+  end
+  raise 'SerpApi 没有找到可用图片。' unless result
+  source_uri = URI(result['link'].to_s) rescue nil
+  source_url = source_uri&.is_a?(URI::HTTPS) ? source_uri.to_s : nil
+  {
+    image: result['thumbnail'],
+    source: source_url,
+    source_name: result['source'].to_s
+  }
 rescue JSON::ParserError
-  raise '无法读取豆包图片接口的返回内容，请稍后重试。'
+  raise '无法读取 SerpApi 的返回内容，请稍后重试。'
 rescue Net::OpenTimeout, Net::ReadTimeout
-  raise '豆包图片生成超时，请稍后重试。'
+  raise 'SerpApi 图片搜索超时，请稍后重试。'
 rescue SocketError
-  raise '无法连接豆包图片服务，请检查网络。'
+  raise '无法连接 SerpApi，请检查网络。'
 end
 
 server = WEBrick::HTTPServer.new(
@@ -227,8 +223,8 @@ server.mount_proc '/' do |req, res|
 
     if req.path == '/api/recipe-image' && req.request_method == 'POST'
       body = request_json(req) || {}
-      image = generate_recipe_image(body['recipe'].is_a?(Hash) ? body['recipe'] : {})
-      json_response(res, 200, { image: image })
+      image = search_recipe_image(body['recipe'].is_a?(Hash) ? body['recipe'] : {})
+      json_response(res, 200, image)
       next
     end
 
