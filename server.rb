@@ -7,6 +7,8 @@ require 'net/http'
 require 'uri'
 require 'openssl'
 require 'fileutils'
+require 'base64'
+require 'digest'
 
 ROOT = File.expand_path(__dir__)
 DATA_PATH = File.join(ROOT, 'data.json')
@@ -142,6 +144,55 @@ def new_id(prefix)
   "#{prefix}-#{Time.now.to_i}-#{rand(1000..9999)}"
 end
 
+def generate_recipe_image(recipe)
+  api_key = ENV['IMAGE_API_KEY']
+  raise '未找到 IMAGE_API_KEY，请在本地 .env 配置豆包图片生成密钥。' if api_key.to_s.empty?
+  title = recipe['title'].to_s.strip
+  raise '菜谱名称为空，无法生成图片。' if title.empty?
+  ingredients = Array(recipe['ingredients']).map { |item| item.is_a?(Hash) ? item['name'].to_s : item.to_s }.reject(&:empty?)
+  cache_key = Digest::SHA256.hexdigest(([title] + ingredients.sort).join('|'))
+  image_dir = File.join(ROOT, 'assets', 'generated')
+  image_path = File.join(image_dir, "#{cache_key}.jpg")
+  return "assets/generated/#{cache_key}.jpg" if File.exist?(image_path)
+
+  prompt = "写实家常菜摄影，一份#{title}，主要食材为#{ingredients.join('、')}。整道菜盛在简洁的白色餐盘中，温暖自然窗边光，浅米色餐桌背景，构图干净，菜品真实诱人，适合手机菜谱卡片。只呈现菜肴，不要文字、标签、logo、水印或拼贴。"
+  uri = URI('https://ark.cn-beijing.volces.com/api/v3/images/generations')
+  http = Net::HTTP.new(uri.host, uri.port)
+  http.use_ssl = true
+  http.verify_mode = OpenSSL::SSL::VERIFY_PEER
+  http.open_timeout = 15
+  http.read_timeout = 180
+  request = Net::HTTP::Post.new(uri)
+  request['Authorization'] = "Bearer #{api_key}"
+  request['Content-Type'] = 'application/json'
+  request.body = JSON.generate({
+    model: ENV.fetch('IMAGE_MODEL', 'doubao-seedream-4-0-250828'),
+    prompt: prompt,
+    size: '2K',
+    response_format: 'b64_json',
+    output_format: 'jpeg',
+    watermark: false
+  })
+  response = http.request(request)
+  payload = JSON.parse(response.body)
+  unless response.is_a?(Net::HTTPSuccess)
+    raise(payload.dig('error', 'message') || "豆包图片接口请求失败（HTTP #{response.code}）。")
+  end
+  encoded = payload.dig('data', 0, 'b64_json')
+  raise '豆包没有返回图片数据，请检查模型权限和接口配置。' if encoded.to_s.empty?
+  image_bytes = Base64.decode64(encoded)
+  raise '生成的图片数据为空或格式无效。' unless image_bytes.start_with?("\xFF\xD8".b)
+  FileUtils.mkdir_p(image_dir)
+  File.binwrite(image_path, image_bytes)
+  "assets/generated/#{cache_key}.jpg"
+rescue JSON::ParserError
+  raise '无法读取豆包图片接口的返回内容，请稍后重试。'
+rescue Net::OpenTimeout, Net::ReadTimeout
+  raise '豆包图片生成超时，请稍后重试。'
+rescue SocketError
+  raise '无法连接豆包图片服务，请检查网络。'
+end
+
 server = WEBrick::HTTPServer.new(
   Port: (ENV['PORT'] || 4567).to_i,
   BindAddress: '127.0.0.1',
@@ -171,6 +222,13 @@ server.mount_proc '/' do |req, res|
       question = body && body['question'].to_s.strip
       raise '请输入想让厨房管家处理的任务。' if question.empty?
       json_response(res, 200, ask_deepseek(question, read_state))
+      next
+    end
+
+    if req.path == '/api/recipe-image' && req.request_method == 'POST'
+      body = request_json(req) || {}
+      image = generate_recipe_image(body['recipe'].is_a?(Hash) ? body['recipe'] : {})
+      json_response(res, 200, { image: image })
       next
     end
 
@@ -223,6 +281,8 @@ server.mount_proc '/' do |req, res|
     elsif req.path.match?(%r{\A/(app\.js|styles\.css)\z})
       file_path = File.join(ROOT, req.path.sub(%r{\A/}, ''))
     elsif req.path.match?(%r{\A/assets/recipes/[a-z0-9-]+\.jpg\z})
+      file_path = File.join(ROOT, req.path.sub(%r{\A/}, ''))
+    elsif req.path.match?(%r{\A/assets/generated/[a-f0-9]{64}\.jpg\z})
       file_path = File.join(ROOT, req.path.sub(%r{\A/}, ''))
     else
       json_response(res, 404, { error: '未找到接口或页面。' })
