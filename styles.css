@@ -287,3 +287,18 @@ button{touch-action:manipulation;cursor:pointer;max-width:100%}
 .recipe-page .recipe-search>button{flex:0 0 auto;min-width:100px;min-height:46px;padding:8px 12px;white-space:nowrap;font-size:15px}
 .recipe-page .active-meal-banner small{line-height:1.5;color:#466852}
 @media(max-width:350px){.recipe-page .recipe-search{flex-wrap:wrap}.recipe-page .recipe-search .voice-input-wrap{flex-basis:100%}.recipe-page .recipe-search>button{width:auto}}
+@media(min-width:760px){.recipe-page .meal-mode-controls{justify-content:flex-start}.recipe-page .meal-mode-controls button{flex:0 0 auto;min-height:36px;padding:7px 15px}}
+.recipe-page .recipe-tabs button{white-space:nowrap}
+.recipe-shopping-source{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.recipe-shopping-source>div{min-width:0}.recipe-shopping-source p{margin:5px 0 0;line-height:1.5}
+.recipe-shopping-source button{flex:none;white-space:nowrap}
+@media(max-width:350px){.recipe-page .recipe-tabs{gap:0}.recipe-page .recipe-tabs button{padding:0 9px}.recipe-shopping-source{align-items:flex-start;flex-wrap:wrap}}
+.purchase-choice{border-bottom:1px solid var(--line);padding:6px 0}
+.purchase-choice .missing-choice{border:0;align-items:flex-start}
+.purchase-choice .missing-choice span{line-height:1.5}
+.purchase-choice .missing-choice small{display:block;color:var(--sub)}
+.purchase-choice details{margin:0 0 7px 27px;color:var(--sub);font-size:12px}
+.purchase-choice summary{cursor:pointer;color:var(--brand);padding:5px 0}
+.purchase-choice .shopping-quantity-row{display:flex;gap:8px}
+.purchase-choice .shopping-quantity-row input{min-width:0;flex:1}
+.purchase-group h3{font-size:14px;margin:16px 0 5px;color:var(--ink)}

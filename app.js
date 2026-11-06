@@ -561,6 +561,9 @@ function mealMenuButton(){
 function menuRecipe(entry){
   return recipeForView(recipeById(entry.recipeId),entry.servings||mealPlan.request.servings);
 }
+function isSeasoning(item){
+  return item.category==='seasoning'||/^(食盐|盐|白糖|糖|食用油|植物油|油|生抽|老抽|酱油|料酒|蚝油|醋|香油|芝麻油|胡椒粉|辣椒粉|辣椒酱|豆瓣酱|番茄酱|淀粉|味精|鸡精)$/.test(item.name);
+}
 function menuInventorySummary(){
   const grouped=new Map();
   for(const entry of mealPlan.menu){
@@ -568,27 +571,31 @@ function menuInventorySummary(){
     if(!recipe)continue;
     for(const ingredient of [...(recipe.ingredients||[]),...(recipe.auxiliaries||[]),...(recipe.seasonings||[])]){
       if(/^(清水|水)$/.test(ingredient.name))continue;
-      const key=`${ingredient.name}|${ingredient.unit||''}`;
-      const current=grouped.get(key)||{name:ingredient.name,unit:ingredient.unit||'',quantity:0,known:true,recipes:[],category:ingredient.category||'main',optional:ingredient.optional===true};
-      if(ingredient.quantity==null||ingredient.quantity===''||!Number.isFinite(Number(ingredient.quantity)))current.known=false;
+      const seasoning=isSeasoning(ingredient);
+      const key=`${ingredient.name}|${ingredient.unit||''}|${seasoning?'seasoning':'food'}`;
+      const current=grouped.get(key)||{name:ingredient.name,unit:ingredient.unit||'',quantity:0,known:true,recipes:[],category:seasoning?'seasoning':ingredient.category||'main',optional:ingredient.optional===true};
+      if(ingredient.quantity==null||ingredient.quantity===''||!Number.isFinite(Number(ingredient.quantity))||Number(ingredient.quantity)<=0)current.known=false;
       else current.quantity=Number((current.quantity+Number(ingredient.quantity)).toFixed(2));
-      current.recipes.push(recipe.title);
-      grouped.set(key,current);
+      current.recipes.push(recipe.title);grouped.set(key,current);
     }
   }
   return [...grouped.values()].map(item=>{
     const records=state.inventory.filter(stock=>stock.name===item.name);
-    const matches=records.filter(stock=>safeInventory(stock)&&Number.isFinite(Number(stock.quantity))&&Number(stock.quantity)>0);
-    const compatible=matches.filter(stock=>(stock.unit||'')===item.unit);
-    if(!item.known)return {...item,status:'用量待确认',gap:null,covered:null};
-    if(records.length&&!matches.length)return {...item,status:'有状态存疑或不可食用记录，不能计入库存',gap:null,covered:null};
-    if(!matches.length)return {...item,status:'家里可能有，待核对',gap:null,covered:null};
-    if(compatible.length!==matches.length&&compatible.length===0)return {...item,status:'库存单位不兼容，待核对',gap:null,covered:null};
+    const valid=records.filter(stock=>safeInventory(stock)&&stock.quantity!=null&&stock.quantity!==''&&Number.isFinite(Number(stock.quantity))&&Number(stock.quantity)>=0);
+    const compatible=valid.filter(stock=>item.unit&&(stock.unit||'')===item.unit);
+    if(!records.length)return {...item,stockGroup:'unrecorded',status:'冰箱未记录，家里是否有待核对',gap:null,covered:null,suggestedQuantity:item.known?item.quantity:null};
+    if(!valid.length)return {...item,stockGroup:'uncertain',status:'冰箱有记录，数量或状态待核对',gap:null,covered:null,suggestedQuantity:null};
+    if(!compatible.length)return {...item,stockGroup:'uncertain',status:'冰箱有记录，单位不一致，待核对',gap:null,covered:null,suggestedQuantity:null};
     const available=compatible.reduce((sum,stock)=>sum+Number(stock.quantity),0);
+    if(!item.known)return {...item,stockGroup:'uncertain',status:`冰箱记录 ${available} ${item.unit}，菜谱用量待确认`,gap:null,covered:available,suggestedQuantity:null};
     const gap=Math.max(0,Number((item.quantity-available).toFixed(2)));
-    return {...item,status:gap>0?`预计缺 ${gap} ${item.unit}`:`库存记录可覆盖 ${item.quantity} ${item.unit}`,gap,covered:available};
+    const partial=records.length!==compatible.length;
+    if(partial&&gap>0)return {...item,stockGroup:'uncertain',status:`冰箱可比较记录 ${available} ${item.unit}，其他记录待核对`,gap:null,covered:available,suggestedQuantity:null};
+    return {...item,stockGroup:gap>0?'short':'covered',status:gap>0?`冰箱记录 ${available} ${item.unit}，预计还需 ${gap} ${item.unit}`:`冰箱记录 ${available} ${item.unit}，参考用量可覆盖`,gap,covered:available,suggestedQuantity:gap>0?gap:null};
   });
 }
+function menuShoppingCandidates(){return menuInventorySummary().filter(item=>item.category!=='seasoning'&&(item.gap>0||item.gap===null));}
+
 function estimatedMinutes(recipe){
   return Number.isFinite(Number(recipe.duration))?Number(recipe.duration):null;
 }
@@ -596,18 +603,25 @@ function menuEstimatedDuration(){
   return collectMenuAllocations().estimatedMinutes??'待估';
 }
 function mealMenuPage(){
-  const ingredients=menuInventorySummary().filter(item=>!(/^(清水|水)$/.test(item.name)||item.category==='seasoning'&&item.optional&&item.gap===null));
-  const hasGaps=ingredients.some(item=>item.gap>0||item.gap===null);
+  const ingredients=menuInventorySummary().filter(item=>item.category!=='seasoning');
+  const hasGaps=menuShoppingCandidates().length>0;
   const scheduleDuration=collectMenuAllocations().estimatedMinutes;
   const timeCopy=scheduleDuration==null?'总用时待估':`总用时约 ${scheduleDuration} 分钟（保守串行）`;
   return `<div class="recipe-page meal-menu-page"><button class="text-button back-link" data-action="back-to-recipes">‹ 返回菜谱</button><h2>这一顿，就这样安排。</h2><p class="menu-subtitle">可以换一道，也可以少做一道。</p><div class="meal-quick-adjust"><label>本餐人数<select id="menu-servings"><option value="1" ${mealPlan.request.servings===1?'selected':''}>1人</option><option value="2" ${mealPlan.request.servings===2?'selected':''}>2人</option></select></label><span>${mealLabel()} · ${timeCopy}</span></div>${mealPlan.menu.length?`<div class="menu-dishes">${mealPlan.menu.map((entry,index)=>{const recipe=menuRecipe(entry);return recipe?`<article class="menu-dish card">${imageMarkup(recipe)}<div><strong>${esc(recipe.title)}</strong><small>${entry.servings||mealPlan.request.servings}人份</small><div class="menu-dish-actions"><button class="text-button" data-action="recipe-detail" data-id="${esc(entry.recipeId)}">查看做法</button><button class="text-button" data-action="replace-menu-item" data-index="${index}">换一道</button><button class="text-button danger-text" data-action="remove-menu-item" data-id="${esc(entry.recipeId)}">移除</button></div></div></article>`:''}).join('')}</div><button class="secondary-button full-button" data-action="add-another-dish">再添一道</button><div class="section-title"><h2>整餐食材摘要</h2></div><section class="card">${ingredients.map(item=>`<div class="inventory-item"><div class="item-main"><strong>${esc(item.name)} <small>${item.category==='seasoning'?'调味料':item.category==='auxiliary'?'辅料':'主要食材'}</small></strong><p>${item.known?`参考需要 ${item.quantity} ${esc(item.unit)}`:'参考用量待确认'} · ${esc(item.status)}</p></div></div>`).join('')}</section>${hasGaps?'<p class="meta">只在库存可比较且有明确缺口时提醒；未记录不代表家里没有，开始制作不会扣库存。</p>':''}<div class="meal-menu-actions">${hasGaps?'<button class="secondary-button" data-action="menu-shopping">确认采购食材</button>':'<span class="menu-no-gaps">目前没有明确缺口</span>'}<button class="primary-button" data-action="start-cooking">开始制作</button></div><p class="meta menu-inventory-note">现在不扣库存，做完后再确认。</p>`:'<section class="card empty"><b>本餐还没有菜</b><span>从发现菜谱或我的菜谱添加一道或多道菜。</span><button class="primary-button" data-action="back-to-recipes">去选菜</button></section>'}${mealMenuButton()}</div>`;
+}
+function recipeTabs(active){
+  return `<div class="recipe-tabs" role="tablist" aria-label="菜谱功能">${[['discover','发现菜谱'],['saved','我的菜谱'],['shopping','采购清单']].map(([id,label])=>`<button role="tab" aria-selected="${active===id}" class="${active===id?'active':''}" data-action="recipe-section" data-section="${id}">${label}</button>`).join('')}</div>`;
+}
+function recipeShoppingPage(){
+  const count=mealPlan.menu.length;
+  return `<div class="recipe-page recipe-shopping-page">${recipeTabs('shopping')}<div class="section-title"><div><h2>采购清单</h2><p class="meta">与采购页共用同一份清单</p></div></div><section class="card recipe-shopping-source"><div><strong>从已选菜谱添加</strong><p class="meta">${count?`本餐已选 ${count} 道，核对食材后加入清单。`:'先选择菜谱，再核对需要购买的食材。'}</p></div><button class="secondary-button" data-action="shopping-from-menu">${count?'核对并添加':'去选菜'}</button></section>${shoppingPage()}</div>`;
 }
 function myRecipesPage(){
   const query=recipeSearch.trim().toLowerCase();
   const saved=state.recipes.filter(recipe=>(!query||`${recipe.title} ${(recipe.ingredients||[]).map(item=>item.name).join(' ')} ${recipe.tags?.join(' ')} ${recipe.platform||''}`.toLowerCase().includes(query))&&(!recipeTagFilter||recipe.tags?.includes(recipeTagFilter))&&(!recipeSourceFilter||recipe.platform===recipeSourceFilter));
   const tags=[...new Set(state.recipes.flatMap(recipe=>recipe.tags||[]))];
   const sources=[...new Set(state.recipes.map(recipe=>recipe.platform).filter(Boolean))];
-  return `<div class="recipe-page my-recipes-page"><div class="recipe-tabs"><button data-action="recipe-section" data-section="discover">发现菜谱</button><button class="active" data-action="recipe-section" data-section="saved">我的菜谱</button></div><div class="section-title"><h2>我的菜谱</h2><button class="primary-button import-button" data-action="open-import">导入菜谱</button></div><form class="recipe-search" id="saved-recipe-search">${voiceInput('saved-recipe-query','我的菜谱搜索',`<input id="saved-recipe-query" name="search" value="${esc(recipeSearch)}" placeholder="搜索我的菜谱">`)}<button class="secondary-button" type="submit">搜索</button></form><div class="saved-filters"><select id="tag-filter"><option value="">全部标签</option>${tags.map(tag=>`<option ${recipeTagFilter===tag?'selected':''}>${esc(tag)}</option>`).join('')}</select><select id="source-filter"><option value="">全部来源</option>${sources.map(source=>`<option ${recipeSourceFilter===source?'selected':''}>${esc(source)}</option>`).join('')}</select></div>${state.recipeDrafts.length?`<section class="card"><strong>待核对草稿 · ${state.recipeDrafts.length}</strong>${state.recipeDrafts.map(draft=>`<div class="draft-row"><div><b>${esc(draft.title||'未命名草稿')}</b><small>${esc(draft.parseStatus||'内容尚未解析')} · ${draft.uncertainties?.length||0} 项待确认</small></div><button class="secondary-button" data-action="edit-recipe-draft" data-id="${esc(draft.id)}">继续编辑</button></div>`).join('')}</section>`:''}${saved.length?`<div class="meal-grid">${saved.map(recipe=>recipeCard(recipe.id)).join('')}</div>`:`<section class="card empty"><b>${state.recipes.length?'没有匹配的菜谱':'还没有保存的菜谱'}</b><span>导入链接、粘贴正文或上传截图；当前解析服务未配置，导入内容会作为待核对草稿，不会假称已解析。</span><button class="primary-button" data-action="open-import">导入菜谱</button></section>`}${mealMenuButton()}</div>`;
+  return `<div class="recipe-page my-recipes-page">${recipeTabs('saved')}<div class="section-title"><h2>我的菜谱</h2><button class="primary-button import-button" data-action="open-import">导入菜谱</button></div><form class="recipe-search" id="saved-recipe-search">${voiceInput('saved-recipe-query','我的菜谱搜索',`<input id="saved-recipe-query" name="search" value="${esc(recipeSearch)}" placeholder="搜索我的菜谱">`)}<button class="secondary-button" type="submit">搜索</button></form><div class="saved-filters"><select id="tag-filter"><option value="">全部标签</option>${tags.map(tag=>`<option ${recipeTagFilter===tag?'selected':''}>${esc(tag)}</option>`).join('')}</select><select id="source-filter"><option value="">全部来源</option>${sources.map(source=>`<option ${recipeSourceFilter===source?'selected':''}>${esc(source)}</option>`).join('')}</select></div>${state.recipeDrafts.length?`<section class="card"><strong>待核对草稿 · ${state.recipeDrafts.length}</strong>${state.recipeDrafts.map(draft=>`<div class="draft-row"><div><b>${esc(draft.title||'未命名草稿')}</b><small>${esc(draft.parseStatus||'内容尚未解析')} · ${draft.uncertainties?.length||0} 项待确认</small></div><button class="secondary-button" data-action="edit-recipe-draft" data-id="${esc(draft.id)}">继续编辑</button></div>`).join('')}</section>`:''}${saved.length?`<div class="meal-grid">${saved.map(recipe=>recipeCard(recipe.id)).join('')}</div>`:`<section class="card empty"><b>${state.recipes.length?'没有匹配的菜谱':'还没有保存的菜谱'}</b><span>导入链接、粘贴正文或上传截图；当前解析服务未配置，导入内容会作为待核对草稿，不会假称已解析。</span><button class="primary-button" data-action="open-import">导入菜谱</button></section>`}${mealMenuButton()}</div>`;
 }
 function recipePage(){
   if(currentDetailId)return recipeDetailPage(currentDetailId);
@@ -615,18 +629,19 @@ function recipePage(){
   if(recipeScreen==='cooking')return cookingPage();
   if(recipeScreen==='complete')return completePage();
   if(recipeSection==='saved')return myRecipesPage();
+  if(recipeSection==='shopping')return recipeShoppingPage();
   const meal=effectiveMeal();
   const active=activeMeal();
   const intent=mealPlan.intent?.sourceText===mealPlan.request.dish?mealPlan.intent:null;
   const intentSummary=intent?[intent.ingredients?.length?`用上：${intent.ingredients.join('、')}`:'',intent.dish||intent.preference||'',intent.appliancesToAvoid?.length?`避开厨具：${intent.appliancesToAvoid.join('、')}`:'',intent.methodsToAvoid?.length?`避开做法：${intent.methodsToAvoid.join('、')}`:''].filter(Boolean).join(' · '):'';
   const intentPanel=intent?`<section class="request-understanding"><div class="request-summary"><strong>需求摘要</strong><span>${esc(intentSummary||'未识别到额外要求')}</span><button type="button" class="text-button" data-action="toggle-recipe-intent">${mealPlan.intentEditing?'收起':'编辑摘要'}</button></div>${mealPlan.intentEditing?`<div class="request-editor"><label>优先用上<input id="intent-ingredients" value="${esc((intent.ingredients||[]).join('、'))}" placeholder="可编辑食材"></label><label>菜品 / 口味<input id="intent-preference" value="${esc([intent.dish,intent.preference].filter(Boolean).join(' · '))}" placeholder="可编辑要求"></label><label>限制厨具<input id="intent-appliances" value="${esc((intent.appliancesToAvoid||[]).join('、'))}" placeholder="例如：烤箱"></label><label>限制做法<input id="intent-methods" value="${esc((intent.methodsToAvoid||[]).join('、'))}" placeholder="例如：油炸"></label><label class="allow-additional-choice"><input id="intent-allow-additional" type="checkbox" ${mealPlan.request.allowAdditionalIngredients!==false?'checked':''}>可以搭配其他食材</label>${(intent.conflicts||[]).length?`<p class="intent-conflict">需要留意：${esc(intent.conflicts.join('；'))}</p>`:''}<button type="button" class="text-button" data-action="apply-recipe-intent" ${recommendationLoading?'disabled':''}>按调整后的需求重新搭配</button></div>`:''}</section>`:'';
   return `<div class="recipe-page">
-    <p class="recipe-subtitle">不用先整理整个冰箱，先选一顿喜欢的。</p><div class="recipe-tabs"><button class="${recipeSection==='discover'?'active':''}" data-action="recipe-section" data-section="discover">发现菜谱</button><button class="${recipeSection==='saved'?'active':''}" data-action="recipe-section" data-section="saved">我的菜谱</button></div>
+    <p class="recipe-subtitle">不用先整理整个冰箱，先选一顿喜欢的。</p>${recipeTabs('discover')}
     ${active?`<section class="active-meal-banner"><strong>${active.status==='awaiting_confirmation'?'本餐待确认消耗':`正在制作：${active.dishes.map(item=>esc(item.recipe.title)).join('、')}`}</strong><button class="text-button" data-action="${active.status==='awaiting_confirmation'?'finish-cooking':'continue-cooking'}">${active.status==='awaiting_confirmation'?'确认消耗':'继续制作'}</button>${menuAdjustmentNotice?'<small role="status">请先完成或结束当前制作，再调整本餐菜单。</small>':''}</section>`:''}
     <form class="recipe-search" id="recipe-query">${voiceInput('dish-query','用餐需求',`<input name="dish" id="dish-query" value="${esc(mealPlan.request.dish)}" placeholder="说说家里有什么，想吃什么" aria-label="说说家里有什么，想吃什么" autocomplete="off">`)}<button type="submit" class="primary-button" ${recommendationLoading?'disabled':''}>${recommendationLoading?'生成中…':'帮我搭配'}</button></form>
     <div class="recipe-quick-controls"><span class="meal-readonly">${mealLabel(meal)}</span><label>人数<select id="servings-select">${[...new Set([1,2,3,4,5,6,8,10,12,mealPlan.request.servings])].sort((a,b)=>a-b).map(value=>`<option value="${value}" ${mealPlan.request.servings===value?'selected':''}>${value}人</option>`).join('')}</select></label><label>时间<select id="duration-select">${[...new Set([15,20,30,45,60,90,mealPlan.request.duration])].sort((a,b)=>a-b).map(value=>`<option value="${value}" ${mealPlan.request.duration===value?'selected':''}>${value}分钟内</option>`).join('')}</select></label><button class="compact-control" data-action="reset-meal">重新安排</button></div>
     <section class="preference-strip"><span>${esc(preferenceSummary())}</span><div class="preference-actions">${hasConfirmedPreferences()?'<button class="secondary-button" data-action="use-personal">无修改，与个人登记一致</button><button class="text-button" data-action="meal-preferences">这顿调整一下</button>':'<button class="secondary-button" data-action="edit-preferences">首次确认过敏与忌口</button>'}</div></section>
-    <section class="meal-mode-panel"><strong>这顿想怎么安排？</strong><div class="meal-mode-controls" role="group" aria-label="推荐方式">${[['use-first','用家里的'],['supplement','顺手补几样'],['explore','换点新花样']].map(([value,label])=>`<button class="${mealPlan.request.mode===value?'active':''}" data-action="meal-mode" data-mode="${value}" aria-pressed="${mealPlan.request.mode===value}">${label}</button>`).join('')}</div><small>${({ 'use-first':'尽量不出门，用好现有食材。','supplement':'用上家里的，再补买几样。','explore':'看看最近大家爱吃什么，先挑喜欢的。'})[mealPlan.request.mode]||'尽量不出门，用好现有食材。'}</small></section>
+    <section class="meal-mode-panel"><strong>这顿想怎么安排？</strong><div class="meal-mode-controls" role="group" aria-label="推荐方式">${[['use-first','用家里的'],['supplement','顺手补几样'],['explore','换点新花样']].map(([value,label])=>`<button class="${mealPlan.request.mode===value?'active':''}" data-action="meal-mode" data-mode="${value}" aria-pressed="${mealPlan.request.mode===value}">${label}</button>`).join('')}</div><small>${({ 'use-first':'尽量不出门，用好现有食材。','supplement':'用上家里的，再补买几样。','explore':'不受冰箱库存限制，先挑想吃的，再核对食材。'})[mealPlan.request.mode]||'尽量不出门，用好现有食材。'}</small></section>
     ${intentPanel}
     <div class="section-title recipe-results-title"><div><h2>给你这几种选择</h2><p>整餐搭配，不用自己从零凑一桌。 · ${mealPlan.request.servings}人 · ${mealPlan.request.duration}分钟内</p></div><button class="text-button" data-action="more-recipes" ${recommendationLoading?'disabled':''}>换一批</button></div>
     ${recommendationNotice?`<p class="meta recommendation-notice">${esc(recommendationNotice)}</p>`:''}
@@ -675,7 +690,7 @@ function shoppingPage(){
   return `${returnBanner}<div class="tab-switch"><button class="${shoppingTab==='pending'?'active':''}" data-action="shopping-tab" data-status="pending">待买 ${pending.length}</button><button class="${shoppingTab==='bought'?'active':''}" data-action="shopping-tab" data-status="bought">已买 ${bought.length}</button></div><section class="card">${list.length?list.map(shoppingRow).join(''):`<div class="empty"><b>${emptyLabel}</b></div>`}</section>${syncButton}<div class="bottom-action"><button class="secondary-button" data-action="add-shopping">＋ 新增食材</button></div>`;
 }
 function shoppingRow(item){
-  return `<div class="shopping-item"><input class="shopping-check" type="checkbox" ${item.status==='bought'?'checked':''} data-action="toggle-shopping" data-id="${esc(item.id)}"><div class="item-main ${item.status==='bought'?'strike':''}"><strong>${esc(item.name)}</strong><p>${esc(item.source||'手动新增')}</p></div><div class="item-side"><strong>${esc(item.quantity)} ${esc(item.unit)}</strong></div><button class="text-button" data-action="delete-shopping" data-id="${esc(item.id)}">删除</button></div>`;
+  return `<div class="shopping-item"><input class="shopping-check" type="checkbox" ${item.status==='bought'?'checked':''} data-action="toggle-shopping" data-id="${esc(item.id)}"><div class="item-main ${item.status==='bought'?'strike':''}"><strong>${esc(item.name)}</strong><p>${esc(item.source||'手动新增')}</p></div><div class="item-side"><strong>${item.quantity==null||item.quantity===''?'数量待确认':esc(item.quantity)} ${esc(item.unit||'')}</strong><button class="text-button" data-action="edit-shopping-quantity" data-id="${esc(item.id)}">修改</button></div><button class="text-button" data-action="delete-shopping" data-id="${esc(item.id)}">删除</button></div>`;
 }
 function profilePage(){
   const p=preferences();
@@ -954,10 +969,6 @@ function chooseRecommendedMeal(recipeId){
   if(mealPlan.menu.some(entry=>entry.recipeId===recipeId)){
     recipeScreen='menu';currentTab='recipes';render();return;
   }
-  if(mealPlan.menu.length){
-    modal(`<h2>换成这顿吗？</h2><p>当前菜单有 ${mealPlan.menu.length} 道菜。确认后会换成所选方案；已加入采购清单的项目会保留。</p><div class="modal-actions"><button type="button" class="secondary-button" data-action="close-modal">继续当前菜单</button><button type="button" class="primary-button" data-action="confirm-choose-meal" data-id="${esc(recipeId)}">换成这顿</button></div>`);
-    return;
-  }
   addRecipeToMenu(recipeId);
 }
 function removeRecipeFromMenu(recipeId){
@@ -966,10 +977,13 @@ function removeRecipeFromMenu(recipeId){
   persist().then(render).catch(error=>toast(error.message));
 }
 function openMenuShopping(){
-  const missing=menuInventorySummary().filter(item=>item.gap>0||item.gap===null);
-  if(!missing.length){toast('本餐菜单没有明确的采购缺口');return;}
-  const rows=missing.map((item,index)=>`<label class="missing-choice"><input type="checkbox" data-menu-buy="${index}"><span>${esc(item.name)} · ${esc(item.status)}</span></label><div class="shopping-quantity-row"><input data-buy-quantity="${index}" type="number" min="0" step="any" value="${item.gap==null?'':item.gap}" placeholder="数量待确认"><input data-buy-unit="${index}" value="${esc(item.unit||'')}" placeholder="单位"></div>`).join('');
-  modal(`<h2>确认加入采购清单</h2><p class="meta">仅添加你勾选的食材；数量或单位不明确时按清单规则单独记录，不与其他单位相加。</p><form id="menu-shopping-form">${rows}<div class="modal-actions"><button type="button" class="secondary-button" data-action="close-modal">取消</button><button class="primary-button" type="submit">加入已选食材</button></div></form>`);
+  const summary=menuInventorySummary(),missing=menuShoppingCandidates();
+  const groups=[['short','冰箱已有 · 预计需要补买'],['unrecorded','冰箱未记录 · 请核对家里是否有'],['uncertain','冰箱记录待核对']];
+  const rows=groups.map(([group,title])=>{const items=missing.map((item,index)=>({item,index})).filter(row=>row.item.stockGroup===group);if(!items.length)return '';return `<section class="purchase-group"><h3>${title}</h3>${items.map(({item,index})=>`<div class="purchase-choice"><label class="missing-choice"><input type="checkbox" data-menu-buy="${index}" checked><span><strong>${esc(item.name)}</strong><small>${esc(item.status)} · ${item.known?`菜谱参考 ${esc(item.quantity)} ${esc(item.unit)}`:'菜谱用量待确认'} · ${item.suggestedQuantity!=null?`建议购买 ${esc(item.suggestedQuantity)} ${esc(item.unit)}`:'购买量待确认'}</small></span></label><details><summary>修改数量或单位</summary><div class="shopping-quantity-row"><input aria-label="${esc(item.name)}购买数量" data-buy-quantity="${index}" type="number" min="0" step="any" value="${item.suggestedQuantity==null?'':item.suggestedQuantity}" placeholder="数量待确认"><input aria-label="${esc(item.name)}购买单位" data-buy-unit="${index}" value="${esc(item.unit==='适量'?'':item.unit||'')}" placeholder="单位待确认"></div></details></div>`).join('')}</section>`;}).join('');
+  const covered=summary.filter(item=>item.category!=='seasoning'&&item.stockGroup==='covered');
+  const seasonings=[...new Set(summary.filter(item=>item.category==='seasoning').map(item=>item.name))];
+  const reminder=`${covered.length?`<p class="meta"><strong>冰箱已有，参考用量可覆盖：</strong>${covered.map(item=>esc(item.name)).join('、')}</p>`:''}${seasonings.length?`<p class="meta"><strong>调味料提醒：</strong>${seasonings.map(esc).join('、')}。请检查是否备齐，不加入采购清单。</p>`:''}`;
+  modal(`<h2>确认采购食材</h2><p class="meta">参考菜谱用量及冰箱记录，默认勾选需要核对的食材；未记录不代表家里没有。数量有变化时可修改。已有同名待买食材不会重复加入。</p><form id="menu-shopping-form">${rows}${reminder}${!missing.length?'<p class="meta">没有需要加入采购清单的食材。</p>':''}<div class="modal-actions"><button type="button" class="secondary-button" data-action="close-modal">${missing.length?'取消':'知道了'}</button>${missing.length?'<button class="primary-button" type="submit">确认加入采购清单</button>':''}</div></form>`);
 }
 async function startCooking(){
   const latest=await api('/api/state');
@@ -1212,12 +1226,12 @@ document.addEventListener('click',async event=>{
     if(action==='back-to-recipes'){recipeScreen='browse';render();return;}
     if(action==='add-menu-item'){addRecipeToMenu(target.dataset.id);return;}
     if(action==='choose-meal'){chooseRecommendedMeal(target.dataset.id);return;}
-    if(action==='confirm-choose-meal'){closeModal();mealPlan.menu=[];addRecipeToMenu(target.dataset.id);return;}
     if(action==='remove-menu-item'){removeRecipeFromMenu(target.dataset.id);return;}
     if(action==='add-another-dish'){recipeScreen='browse';recipeSection='discover';currentDetailId=null;render();return;}
     if(action==='replace-menu-item'){replaceMenuIndex=Number(target.dataset.index);recipeScreen='browse';recipeSection='discover';render();toast('选择一道菜替换本餐中的菜品');return;}
     if(action==='clear-menu'){mealPlan.menu=[];await persist();recipeScreen='browse';render();return;}
     if(action==='menu-shopping'){openMenuShopping();return;}
+    if(action==='shopping-from-menu'){if(!mealPlan.menu.length){recipeSection='discover';render();}else openMenuShopping();return;}
     if(action==='start-cooking'){await startCooking();return;}
     if(action==='confirm-ready'){closeModal();await beginMealCooking();return;}
     if(action==='open-import'){openRecipeImport();return;}
@@ -1270,7 +1284,8 @@ document.addEventListener('click',async event=>{
     if(action==='toggle-shopping'){const input=target;const item=state.shopping.find(entry=>entry.id===input.dataset.id);if(item){item.status=input.checked?'bought':'pending';item.completedAt=input.checked?today():'';await persist();render();}return;}
     if(action==='delete-shopping'){state.shopping=state.shopping.filter(item=>item.id!==target.dataset.id);await persist();render();return;}
     if(action==='add-shopping'){shoppingModal();return;}
-    if(action==='sync-shopping'){const ids=state.shopping.filter(item=>item.status==='bought').map(item=>item.id);state=await api('/api/sync-shopping',{method:'POST',body:JSON.stringify({ids})});mealPlan=state.mealPlan;render();toast('已同步入库');return;}
+    if(action==='edit-shopping-quantity'){const item=state.shopping.find(entry=>entry.id===target.dataset.id);if(!item)return;modal(`<h2>填写购买数量</h2><form id="edit-shopping-form" data-id="${esc(item.id)}"><p>${esc(item.name)}</p><label>数量</label><input name="quantity" type="number" min="0.001" step="any" value="${item.quantity==null?'':esc(item.quantity)}" required><label>单位</label><input name="unit" value="${esc(item.unit||'')}" required><div class="modal-actions"><button type="button" class="secondary-button" data-action="close-modal">取消</button><button class="primary-button" type="submit">保存</button></div></form>`);return;}
+    if(action==='sync-shopping'){const bought=state.shopping.filter(item=>item.status==='bought');const ready=bought.filter(item=>item.quantity!=null&&item.quantity!==''&&Number.isFinite(Number(item.quantity))&&Number(item.quantity)>0&&item.unit&&item.unit!=='适量');if(!ready.length){toast('请先填写已买食材的数量和单位');return;}state=await api('/api/sync-shopping',{method:'POST',body:JSON.stringify({ids:ready.map(item=>item.id)})});mealPlan=state.mealPlan;render();toast(ready.length<bought.length?'已同步数量明确的食材，其余请补充数量和单位':'已同步入库');return;}
     if(action==='undo-cook'){const result=await api('/api/cook/undo',{method:'POST',body:JSON.stringify({operationId:target.dataset.operation})});state=result.state;mealPlan=state.mealPlan;mealPlan.lastCompleted={...(mealPlan.lastCompleted||{}),operationId:result.operation.id,undone:true,recipe:mealPlan.lastCompleted?.recipe||{title:result.operation.recipeTitle||'本餐',servings:result.operation.servings||1},counts:mealPlan.lastCompleted?.counts||result.operation.counts||{update:result.operation.consumption?.length||0,add:result.operation.additions?.length||0,skip:0}};await persist();recipeScreen='complete';currentTab='recipes';render();return;}
     if(action==='recipe-discover'){recipeScreen='browse';recipeSection='discover';currentTab='recipes';render();return;}
     if(action==='import-shopping'){await importShopping(agentResult?.shopping||[],'厨房管家建议');return;}
@@ -1296,22 +1311,21 @@ document.addEventListener('submit',async event=>{
     if(form.id==='saved-recipe-search'){recipeSearch=String(new FormData(form).get('search')||'');render();return;}
     if(form.id==='inventory-search'){inventorySearch=String(new FormData(form).get('search')||'').trim();render();return;}
     if(form.id==='menu-shopping-form'){
-      const missing=menuInventorySummary().filter(item=>item.gap>0||item.gap===null);
+      const missing=menuShoppingCandidates();
       const selected=[...form.querySelectorAll('[data-menu-buy]:checked')].map(input=>{
         const index=input.dataset.menuBuy,item=missing[Number(index)];
-        const quantity=Number(form.querySelector(`[data-buy-quantity="${index}"]`)?.value);
+        const raw=String(form.querySelector(`[data-buy-quantity="${index}"]`)?.value||'').trim();
+        const quantity=raw===''?null:Number(raw);
         const unit=String(form.querySelector(`[data-buy-unit="${index}"]`)?.value||'').trim();
-        if(!Number.isFinite(quantity)||quantity<=0||!unit)throw new Error(`请填写${item.name}的购买数量和单位。`);
+        if(quantity!==null&&(!Number.isFinite(quantity)||quantity<=0))throw new Error(`请填写${item.name}的大于零的数量，或留空待确认。`);
         return {...item,purchaseQuantity:quantity,purchaseUnit:unit};
       });
       if(!selected.length)throw new Error('请勾选需要加入清单的食材。');
       for(const item of selected){
-        const quantity=item.purchaseQuantity,unit=item.purchaseUnit;
-        const existing=state.shopping.find(line=>line.name===item.name&&line.unit===unit&&line.status==='pending');
-        if(existing)existing.quantity=Number(existing.quantity)+quantity;
-        else state.shopping.push({id:`shop-${Date.now()}-${Math.random().toString(16).slice(2)}`,name:item.name,quantity,unit,category:'其他',source:'本餐菜单',mealId:mealPlan.active?.id||mealPlan.menuId||mealPlan.roundMeal,status:'pending',completedAt:''});
+        if(state.shopping.some(line=>line.name===item.name&&line.status==='pending'))continue;
+        state.shopping.push({id:`shop-${Date.now()}-${Math.random().toString(16).slice(2)}`,name:item.name,quantity:item.purchaseQuantity,unit:item.purchaseUnit,category:'其他',source:`本餐菜单 · ${item.stockGroup==='short'?'冰箱已有，预计补买':item.stockGroup==='unrecorded'?'冰箱未记录，待核对':'冰箱记录待核对'} · 参考数量`,mealId:mealPlan.active?.id||mealPlan.menuId||mealPlan.roundMeal,status:'pending',completedAt:''});
       }
-      await persist();closeModal();returnToMeal=true;currentTab='shopping';render();toast('已加入你勾选的食材');return;
+      await persist();closeModal();shoppingTab='pending';if(currentTab==='recipes'){recipeSection='shopping';recipeScreen='browse';returnToMeal=false;}else{returnToMeal=true;currentTab='shopping';}render();toast('已加入你勾选的食材');return;
     }
     if(form.id==='meal-preference-form'){
       const data=new FormData(form);const adjustment={flavors:splitList(data.get('flavors')),appliances:splitList(data.get('appliances'))};
@@ -1401,6 +1415,11 @@ document.addEventListener('submit',async event=>{
       const current=state.inventory.find(entry=>entry.id===id);
       if(current)Object.assign(current,item);else state.inventory.push(item);
       await persist();closeModal();render();toast('库存已保存');return;
+    }
+    if(form.id==='edit-shopping-form'){
+      const item=state.shopping.find(entry=>entry.id===form.dataset.id),data=new FormData(form),quantity=Number(data.get('quantity')),unit=String(data.get('unit')||'').trim();
+      if(!item||!Number.isFinite(quantity)||quantity<=0||!unit||unit==='适量')throw new Error('请填写大于零的数量和明确单位。');
+      item.quantity=quantity;item.unit=unit;await persist();closeModal();render();toast('采购数量已保存');return;
     }
     if(form.id==='shopping-form'){
       const data=new FormData(form);

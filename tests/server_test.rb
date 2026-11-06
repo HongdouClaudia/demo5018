@@ -17,6 +17,32 @@ TEST_SERVER = InProcessServer.new
 WEBrick::HTTPServer.define_singleton_method(:new) { |**_options| TEST_SERVER }
 load File.expand_path('../server.rb', __dir__)
 class RecipeServerTest < Minitest::Test
+  def test_explore_request_does_not_send_inventory_as_selection_criteria
+    original_key = ENV['DEEPSEEK_API_KEY']
+    ENV['DEEPSEEK_API_KEY'] = 'test-key'
+    client = Object.new
+    class << client
+      attr_accessor :use_ssl, :verify_mode, :open_timeout, :read_timeout, :captured
+      def request(request)
+        self.captured = JSON.parse(request.body)
+        raise 'captured test request'
+      end
+    end
+    state = {'inventory'=>[{'name'=>'鸡蛋','quantity'=>2,'unit'=>'个'},{'name'=>'牛肉','status'=>'状态存疑'}], 'preferences'=>{'avoid'=>['香菜']}}
+    options = {'meal'=>'dinner','servings'=>2,'duration'=>30,'mode'=>'explore'}
+    Net::HTTP.stub(:new, client) { assert_raises(RuntimeError) { recommend_recipes(options, state) } }
+    context = JSON.parse(client.captured['messages'].last['content'])
+    assert_empty context['available_inventory']
+    assert_empty context['unavailable_inventory']
+    assert_equal ['香菜'], context['avoid']
+    options['mode'] = 'use-first'
+    Net::HTTP.stub(:new, client) { assert_raises(RuntimeError) { recommend_recipes(options, state) } }
+    context = JSON.parse(client.captured['messages'].last['content'])
+    assert_equal '鸡蛋', context['available_inventory'].first['name']
+    assert_equal '牛肉', context['unavailable_inventory'].first['name']
+  ensure
+    ENV['DEEPSEEK_API_KEY'] = original_key
+  end
   def setup
     File.write(DATA_PATH, File.read(SEED_PATH))
   end
@@ -29,6 +55,21 @@ class RecipeServerTest < Minitest::Test
   def stock(id = 'inv-egg'); read_state['inventory'].find { |i| i['id'] == id }; end
   def cook(id = 'one', item = stock, used = 2, extras = {})
     call('/api/cook', {operationId: id, recipe: {title: '测试餐'}, consumption: [{inventoryId: item['id'], quantity: used, expectedQuantity: item['quantity'], expectedItem: item, basis: 'estimated'}]}.merge(extras))
+  end
+  def test_sync_skips_unknown_or_invalid_purchase_amounts
+    state = read_state
+    state['shopping'] = [
+      {'id'=>'unknown', 'name'=>'西兰花', 'quantity'=>nil, 'unit'=>'颗', 'status'=>'bought'},
+      {'id'=>'vague', 'name'=>'盐', 'quantity'=>1, 'unit'=>'适量', 'status'=>'bought'},
+      {'id'=>'known', 'name'=>'土豆', 'quantity'=>2, 'unit'=>'个', 'status'=>'bought'}
+    ]
+    write_state(state)
+    status, result = call('/api/sync-shopping', {ids: %w[unknown vague known]})
+    assert_equal 200, status
+    assert_equal ['known'], result['inventory'].map { |item| item['sourceShoppingId'] }.compact
+    assert_equal 'bought', result['shopping'].find { |item| item['id']=='unknown' }['status']
+    assert_equal 'bought', result['shopping'].find { |item| item['id']=='vague' }['status']
+    assert_equal 'archived', result['shopping'].find { |item| item['id']=='known' }['status']
   end
   def test_reference_idempotent_and_undo
     before = stock
