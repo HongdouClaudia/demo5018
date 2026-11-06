@@ -124,6 +124,7 @@ def ask_deepseek(question, state)
         "difficulty":"简单|中等|挑战",
         "servings":2,
         "imageEmoji":"一个合适的食物 emoji",
+        "imageKey":"从 tomato-chicken-broccoli、tomato-egg、tomato-egg-broccoli-soup、garlic-broccoli、tomato-egg-rice、chicken-broccoli-rice、chicken-broccoli、tomato-chicken-broccoli-soup 中选择最匹配的一项；无法匹配时留空",
         "tags":["临期优先|库存充足|需要补购|口味匹配"],
         "reason":"推荐原因",
         "appliances":["厨具"],
@@ -133,6 +134,7 @@ def ask_deepseek(question, state)
       "shopping":[{"name":"缺少食材","quantity":1,"unit":"个|g|盒","category":"蔬果|肉禽|水产|调味品|其他","source":"菜名"}]
     }
     recipes 最多返回 3 条。只有库存不足时才在 shopping 中列出缺料。若没有适合菜谱，recipes 可以为空，但仍要给出可执行建议。
+    imageKey 只选择与菜名和主要食材都相符的图片；不能为了匹配图片而改变菜谱食材，不匹配时留空。
   PROMPT
 
   uri = URI('https://api.deepseek.com/chat/completions')
@@ -173,6 +175,53 @@ def new_id(prefix)
   "#{prefix}-#{Time.now.to_i}-#{rand(1000..9999)}"
 end
 
+def search_recipe_image(recipe)
+  api_key = ENV['SERPAPI_API_KEY']
+  raise '未找到 SERPAPI_API_KEY，请在本地 .env 配置 SerpApi 密钥。' if api_key.to_s.empty?
+  title = recipe['title'].to_s.strip
+  raise '菜谱名称为空，无法搜索图片。' if title.empty?
+  ingredients = Array(recipe['ingredients']).map { |item| item.is_a?(Hash) ? item['name'].to_s : item.to_s }.reject(&:empty?)
+  query = [title, ingredients.join(' '), '菜品实拍'].reject(&:empty?).join(' ')
+  params = URI.encode_www_form(engine: 'google_images', q: query, api_key: api_key, hl: 'zh-cn', gl: 'cn')
+  uri = URI("https://serpapi.com/search.json?#{params}")
+  http = Net::HTTP.new(uri.host, uri.port)
+  http.use_ssl = true
+  http.verify_mode = OpenSSL::SSL::VERIFY_PEER
+  http.open_timeout = 10
+  http.read_timeout = 30
+  response = http.get(uri.request_uri)
+  payload = JSON.parse(response.body)
+  unless response.is_a?(Net::HTTPSuccess)
+    raise(payload['error'] || "SerpApi 图片搜索失败（HTTP #{response.code}）。")
+  end
+  if payload['error']
+    raise payload['error'].to_s
+  end
+  result = Array(payload['images_results']).find do |image|
+    next false if image['unsafe'] == true
+    begin
+      image_uri = URI(image['thumbnail'].to_s)
+      image_uri.is_a?(URI::HTTPS) && image_uri.host
+    rescue URI::InvalidURIError
+      false
+    end
+  end
+  raise 'SerpApi 没有找到可用图片。' unless result
+  source_uri = URI(result['link'].to_s) rescue nil
+  source_url = source_uri&.is_a?(URI::HTTPS) ? source_uri.to_s : nil
+  {
+    image: result['thumbnail'],
+    source: source_url,
+    source_name: result['source'].to_s
+  }
+rescue JSON::ParserError
+  raise '无法读取 SerpApi 的返回内容，请稍后重试。'
+rescue Net::OpenTimeout, Net::ReadTimeout
+  raise 'SerpApi 图片搜索超时，请稍后重试。'
+rescue SocketError
+  raise '无法连接 SerpApi，请检查网络。'
+end
+
 server = WEBrick::HTTPServer.new(
   Port: (ENV['PORT'] || 4567).to_i,
   BindAddress: '127.0.0.1',
@@ -202,6 +251,13 @@ server.mount_proc '/' do |req, res|
       question = body && body['question'].to_s.strip
       raise '请输入想让厨房管家处理的任务。' if question.empty?
       json_response(res, 200, ask_deepseek(question, read_state))
+      next
+    end
+
+    if req.path == '/api/recipe-image' && req.request_method == 'POST'
+      body = request_json(req) || {}
+      image = search_recipe_image(body['recipe'].is_a?(Hash) ? body['recipe'] : {})
+      json_response(res, 200, image)
       next
     end
 
@@ -255,6 +311,10 @@ server.mount_proc '/' do |req, res|
       file_path = File.join(ROOT, 'index.html')
     elsif req.path.match?(%r{\A/(app\.js|styles\.css)\z})
       file_path = File.join(ROOT, req.path.sub(%r{\A/}, ''))
+    elsif req.path.match?(%r{\A/assets/recipes/[a-z0-9-]+\.jpg\z})
+      file_path = File.join(ROOT, req.path.sub(%r{\A/}, ''))
+    elsif req.path.match?(%r{\A/assets/generated/[a-f0-9]{64}\.jpg\z})
+      file_path = File.join(ROOT, req.path.sub(%r{\A/}, ''))
     else
       json_response(res, 404, { error: '未找到接口或页面。' })
       next
@@ -265,7 +325,15 @@ server.mount_proc '/' do |req, res|
       next
     end
     res.status = 200
-    res['Content-Type'] = file_path.end_with?('.css') ? 'text/css; charset=utf-8' : file_path.end_with?('.js') ? 'application/javascript; charset=utf-8' : 'text/html; charset=utf-8'
+    res['Content-Type'] = if file_path.end_with?('.css')
+      'text/css; charset=utf-8'
+    elsif file_path.end_with?('.js')
+      'application/javascript; charset=utf-8'
+    elsif file_path.end_with?('.jpg')
+      'image/jpeg'
+    else
+      'text/html; charset=utf-8'
+    end
     res.body = File.read(file_path)
   rescue StandardError => e
     json_response(res, 422, { error: e.message })
