@@ -341,6 +341,8 @@ server.mount_proc '/' do |req, res|
 
     if req.path == '/' || req.path == '/index.html'
       file_path = File.join(ROOT, 'index.html')
+    elsif req.path.match?(%r{\A/assets/recipes/[a-z0-9-]+\.jpg\z})
+      file_path = File.join(ROOT, req.path.sub(%r{\A/}, ''))
     elsif req.path.match?(%r{\A/(app\.js|styles\.css|food_knowledge\.json)\z})
       file_path = File.join(ROOT, req.path.sub(%r{\A/}, ''))
     else
@@ -353,7 +355,7 @@ server.mount_proc '/' do |req, res|
       next
     end
     res.status = 200
-    res['Content-Type'] = file_path.end_with?('.css') ? 'text/css; charset=utf-8' : file_path.end_with?('.js') ? 'application/javascript; charset=utf-8' : file_path.end_with?('.json') ? 'application/json; charset=utf-8' : 'text/html; charset=utf-8'
+    res['Content-Type'] = file_path.end_with?('.css') ? 'text/css; charset=utf-8' : file_path.end_with?('.js') ? 'application/javascript; charset=utf-8' : file_path.end_with?('.jpg') ? 'image/jpeg' : file_path.end_with?('.json') ? 'application/json; charset=utf-8' : 'text/html; charset=utf-8'
     res.body = File.read(file_path)
   rescue StandardError => e
     json_response(res, 422, { error: e.message })
