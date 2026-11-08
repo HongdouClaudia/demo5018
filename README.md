@@ -44,8 +44,19 @@ DATA_PATH=/tmp/demo5018-recipe-test.json PORT=4568 ruby server.rb
 
 请从本目录运行 `zsh ./预览菜谱分支.command`，然后打开 <http://127.0.0.1:4570>。脚本只会停止已核实运行在原 Copilot 工作目录的旧 4570 预览；若端口由其他目录占用，会报错退出。旧目录文件不会删除。新预览使用独立示例库存，不修改 `data.json`；访问 <http://127.0.0.1:4570/api/status>，应看到 `service: demo5018-recipe`、`branch: moonxiang1222-recipe`、`isolatedData: true`。操作变化、验证结果与尚未完成的页面验收见 [菜谱体验调整](docs/recipe-ui-adjustments.md)。图片生成依用户最新要求暂缓，等待后续接入图片API。
 
-GitHub Desktop 中已添加本地仓库 `demo5018-recipe`，当前分支应为 `moonxiang1222-recipe`。2026-11-06 的 Fetch 显示 GitHub 尚无同名远端分支，因此完成修改并核对 `Changes` 后，先提交本分支的源码与测试，再用 **Publish branch** 发布该分支；不要把 `.env`、`data.json` 加入提交。之后通过 Pull Request 申请并入 `main`，不要强推或直接覆盖主干。远端 `main` 已有新的提交，当前分支与其在 `app.js`、`styles.css` 存在合并冲突；正式合并前需结合最新主干解决并重新测试。
+当前菜谱分支已在本地整合主干 `572091e`（2026-11-08 核对远端）。首页、冰箱、我的和原采购页沿用主干 `app.js` / `styles.css`；菜谱功能迁至独立的 `recipe-app.js` / `recipe-styles.css`，通过 `recipe-host.js` 接入。共享数据仍保存在同一个 DATA_PATH，使用版本号和库存快照防止互相覆盖。整合不修改远端或本地 main，也不自动推送。详情与验收记录见 [主干兼容整合](docs/recipe-main-compatibility.md)。
 
 ## 菜品图片服务
 
 在本机 `.env` 配置 SerpApi 的 `IMAGE_API_KEY`，请勿提交密钥。推荐页按菜名搜索网络图片，并显示来源链接与“授权待核对”；结果可能与菜品不完全一致，也不能推定已获使用许可。搜索结果链接可能失效，失败可重试；已获取的图片链接保存在本地数据中，图片保留在原网站。步骤图片尚未接入。每次搜索可能消耗 SerpApi 额度。
+
+## 回归检查
+
+```sh
+node tests/client_test.cjs
+node tests/recipe-integration.test.cjs
+node tests/homepage-scope.test.cjs
+ruby tests/server_test.rb
+```
+
+菜谱前端修改请编辑 recipe-app.js / recipe-styles.css；不要把菜谱的全局选择器或事件处理器放回主干 app.js / styles.css。

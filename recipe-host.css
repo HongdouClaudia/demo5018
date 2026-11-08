@@ -1,0 +1,5 @@
+/* Only the recipes route changes the main shell. All other routes use main CSS. */
+#recipe-host[hidden]{display:none}
+body.recipe-view #recipe-host{position:fixed;inset:0 0 calc(60px + env(safe-area-inset-bottom));z-index:3;background:#fffaf5}
+#recipe-host iframe{display:block;border:0;width:100%;height:100%;background:#fffaf5}
+body.recipe-view .bottom-nav{z-index:10}

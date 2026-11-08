@@ -15,6 +15,7 @@ require 'ipaddr'
 require 'cgi'
 
 ROOT = File.expand_path(__dir__)
+require_relative 'recipe_inventory'
 DATA_PATH = File.expand_path(ENV.fetch('DATA_PATH', File.join(ROOT, 'data.json')))
 SEED_PATH = File.join(ROOT, 'seed.json')
 STATE_MUTEX = Mutex.new
@@ -304,16 +305,18 @@ def recommend_recipes(options, state)
   edited_intent = options['intent'].is_a?(Hash) ? options['intent'] : {}
   supplied_ingredients = Array(edited_intent['ingredients']).map { |item| item.to_s.strip[0, 60] }.reject(&:empty?).uniq.take(20)
 
-  unsafe_statuses = %w[不可食用 已确认不可食用 丢弃 变质 状态存疑 待确认]
+  unsafe_statuses = %w[不可食用 已确认不可食用 丢弃 变质 状态存疑 待确认 不宜食用]
   stock = state.fetch('inventory', []).map do |item|
     quantity = Float(item['quantity']) rescue nil
     next unless quantity && quantity.finite? && quantity.positive?
     next if unsafe_statuses.include?(item['status'].to_s) || unsafe_statuses.include?(item['freshness'].to_s)
-    { name: item['name'].to_s[0, 60], quantity: quantity, unit: item['unit'].to_s[0, 20], freshness: item['freshness'].to_s[0, 30] }
+    freshness = recipe_stock_freshness(item)
+    next if freshness == '不宜食用'
+    { name: item['name'].to_s[0, 60], quantity: quantity, unit: item['unit'].to_s[0, 20], freshness: freshness }
   end.compact.take(100)
   unavailable_stock = state.fetch('inventory', []).map do |item|
     status = item['status'].to_s
-    freshness = item['freshness'].to_s
+    freshness = recipe_stock_freshness(item)
     next unless (unsafe_statuses.include?(status) || unsafe_statuses.include?(freshness)) && !item['name'].to_s.strip.empty?
     { name: item['name'].to_s[0, 60], status: [status, freshness].reject(&:empty?).join(' / ')[0, 60] }
   end.compact.take(100)
@@ -553,6 +556,78 @@ def new_id(prefix)
   "#{prefix}-#{Time.now.to_i}-#{rand(1000..9999)}"
 end
 
+def parse_inventory_with_deepseek(text)
+  api_key = ENV['DEEPSEEK_API_KEY']
+  raise '未找到 DEEPSEEK_API_KEY，请先配置。' if api_key.to_s.empty?
+  today = Time.now.strftime('%Y-%m-%d')
+  prompt = "你处理的是家庭冰箱场景：食材通常已经历采摘或生产、运输、仓储和零售，新鲜度不能按果园刚采摘或刚生产计算。把用户文字拆成清单，只返回JSON：{\"items\":[{\"name\":\"食材名\",\"quantity\":1,\"unit\":\"个\",\"estimatedGrams\":150,\"location\":\"冷藏\",\"purchaseDate\":\"#{today}\",\"freshness\":\"新鲜\"}]}。结合食材性质、冷藏或冷冻、存入日期与今天#{today}判断freshness，只能是新鲜、尽快食用、不宜食用；要按家庭冰箱剩余可食用期保守判断。estimatedGrams为总重量估计。缺少数量默认1，缺少单位用常用家庭单位，缺少位置默认冷藏，缺少日期默认#{today}。最多20条，不输出解释或Markdown。"
+  uri = URI('https://api.deepseek.com/chat/completions')
+  http = Net::HTTP.new(uri.host, uri.port)
+  http.use_ssl = true
+  http.verify_mode = OpenSSL::SSL::VERIFY_PEER
+  http.open_timeout = 15
+  http.read_timeout = 60
+  request = Net::HTTP::Post.new(uri)
+  request['Content-Type'] = 'application/json'
+  request['Authorization'] = "Bearer #{api_key}"
+  request.body = JSON.generate(model: ENV.fetch('DEEPSEEK_MODEL', 'deepseek-chat'), temperature: 0.1, max_tokens: 1400, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: prompt }, { role: 'user', content: text }])
+  response = http.request(request)
+  payload = JSON.parse(response.body)
+  raise(payload.dig('error', 'message') || "DeepSeek 请求失败（#{response.code}）") unless response.is_a?(Net::HTTPSuccess)
+  result = JSON.parse(payload.dig('choices', 0, 'message', 'content').to_s)
+  items = Array(result['items']).first(20).map do |item|
+    name = item['name'].to_s.strip
+    next if name.empty?
+    freshness = %w[新鲜 尽快食用 不宜食用].include?(item['freshness']) ? item['freshness'] : '新鲜'
+    { 'name' => name, 'quantity' => [item['quantity'].to_f, 0.1].max, 'unit' => item['unit'].to_s.strip.empty? ? '个' : item['unit'].to_s.strip, 'estimatedGrams' => [item['estimatedGrams'].to_f, 0].max.round, 'location' => item['location'] == '冷冻' ? '冷冻' : '冷藏', 'purchaseDate' => item['purchaseDate'].to_s.match?(/\A\d{4}-\d{2}-\d{2}\z/) ? item['purchaseDate'] : today, 'freshness' => freshness }
+  end.compact
+  raise '没有识别到食材，请换一种说法。' if items.empty?
+  { 'items' => items }
+rescue Net::OpenTimeout, Net::ReadTimeout
+  raise 'DeepSeek 请求超时，请稍后重试。'
+rescue SocketError
+  raise '无法连接 DeepSeek 服务，请检查网络。'
+rescue JSON::ParserError
+  raise '模型返回格式异常，请重试。'
+end
+
+def recognize_inventory_photo(image_data)
+  api_key = ENV['DEEPSEEK_API_KEY']
+  raise '未找到 DEEPSEEK_API_KEY，请先配置。' if api_key.to_s.empty?
+  raise '图片格式不支持。' unless image_data.to_s.match?(%r{\Adata:image/(jpeg|png|gif|webp);base64,}i)
+  raise '图片过大，请选择 8MB 以内的图片。' if image_data.bytesize > 11_000_000
+  today = Time.now.strftime('%Y-%m-%d')
+  prompt = "这是家庭冰箱食材录入：图片里的食材通常已经历采摘或生产、运输、仓储和零售，不能按刚采摘状态判断新鲜度。识别食材并只返回JSON：{\"items\":[{\"name\":\"食材名\",\"quantity\":1,\"unit\":\"个\",\"estimatedGrams\":150,\"location\":\"冷藏\",\"purchaseDate\":\"#{today}\",\"freshness\":\"新鲜\"}]}。结合食材性质、可见外观状态、冷藏或冷冻条件和日期，保守判断家庭冰箱剩余可食用期；freshness只能是新鲜、尽快食用、不宜食用。无法判断数量默认1、单位用常用家庭单位、位置默认冷藏、日期默认#{today}。不要把餐具或包装袋识别为食材，最多20条，不输出解释或Markdown。"
+  uri = URI('https://api.deepseek.com/chat/completions')
+  http = Net::HTTP.new(uri.host, uri.port)
+  http.use_ssl = true
+  http.verify_mode = OpenSSL::SSL::VERIFY_PEER
+  http.open_timeout = 15
+  http.read_timeout = 90
+  request = Net::HTTP::Post.new(uri)
+  request['Content-Type'] = 'application/json'
+  request['Authorization'] = "Bearer #{api_key}"
+  request.body = JSON.generate(model: ENV.fetch('DEEPSEEK_VISION_MODEL', 'deepseek-flash'), temperature: 0.1, max_tokens: 1400, response_format: { type: 'json_object' }, messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: image_data, detail: 'high' } }] }])
+  response = http.request(request)
+  payload = JSON.parse(response.body)
+  raise(payload.dig('error', 'message') || "DeepSeek 图片识别失败（#{response.code}）") unless response.is_a?(Net::HTTPSuccess)
+  result = JSON.parse(payload.dig('choices', 0, 'message', 'content').to_s)
+  items = Array(result['items']).first(20).map do |item|
+    name = item['name'].to_s.strip
+    next if name.empty?
+    freshness = %w[新鲜 尽快食用 不宜食用].include?(item['freshness']) ? item['freshness'] : '新鲜'
+    { 'name' => name, 'quantity' => [item['quantity'].to_f, 0.1].max, 'unit' => item['unit'].to_s.strip.empty? ? '个' : item['unit'].to_s.strip, 'estimatedGrams' => [item['estimatedGrams'].to_f, 0].max.round, 'location' => item['location'] == '冷冻' ? '冷冻' : '冷藏', 'purchaseDate' => item['purchaseDate'].to_s.match?(/\A\d{4}-\d{2}-\d{2}\z/) ? item['purchaseDate'] : today, 'freshness' => freshness }
+  end.compact
+  raise '没有识别到可录入的食材，请换一张更清晰的图片。' if items.empty?
+  { 'items' => items }
+rescue Net::OpenTimeout, Net::ReadTimeout
+  raise 'DeepSeek 图片识别超时，请稍后重试。'
+rescue SocketError
+  raise '无法连接 DeepSeek 服务，请检查网络。'
+rescue JSON::ParserError
+  raise '模型返回格式异常，请重试。'
+end
+
 server = WEBrick::HTTPServer.new(
   Port: (ENV['PORT'] || 4567).to_i,
   BindAddress: '127.0.0.1',
@@ -618,6 +693,22 @@ server.mount_proc '/' do |req, res|
     if req.path == '/api/recipe-recommendation' && req.request_method == 'POST'
       body = request_json(req) || {}
       json_response(res, 200, recommend_recipes(body, read_state))
+      next
+    end
+
+    if req.path == '/api/ai-inventory' && req.request_method == 'POST'
+      body = request_json(req)
+      text = body && body['text'].to_s.strip
+      raise '请输入需要放入冰箱的食材。' if text.empty?
+      json_response(res, 200, parse_inventory_with_deepseek(text))
+      next
+    end
+
+    if req.path == '/api/photo-inventory' && req.request_method == 'POST'
+      body = request_json(req)
+      image = body && body['image'].to_s
+      raise '请先拍照或选择图片。' if image.empty?
+      json_response(res, 200, recognize_inventory_photo(image))
       next
     end
 
@@ -687,8 +778,9 @@ server.mount_proc '/' do |req, res|
         consumption.select { |line| line['inventoryId'] == inventory_id }.each do |line|
           raise '库存日期、状态或数量已变化，请重新核对本项。' unless line['expectedItem'] == item
         end
-        unsafe_statuses = %w[不可食用 已确认不可食用 丢弃 变质 状态存疑 待确认]
+        unsafe_statuses = %w[不可食用 已确认不可食用 丢弃 变质 状态存疑 待确认 不宜食用]
         raise "#{item['name']} 已标记状态存疑或不可食用，不能确认消耗。" if unsafe_statuses.include?(item['status']) || unsafe_statuses.include?(item['freshness'])
+        raise "#{item['name']} 按冰箱规则已不宜食用，请先核对库存。" if recipe_stock_freshness(item) == '不宜食用'
         raise "#{item['name']} 库存不足，无法确认该消耗量。" if used > item['quantity'].to_f
       end
       before = totals.keys.map do |inventory_id|
@@ -701,6 +793,7 @@ server.mount_proc '/' do |req, res|
         item = state['inventory'].find { |entry| entry['id'] == line['inventoryId'] }
         raise '盘点库存已变化，请重新核对本项。' unless item && line['expectedItem'] == item
         raise '存疑库存不能在制作确认中盘点。' if %w[不可食用 已确认不可食用 丢弃 变质 状态存疑 待确认].include?(item['freshness']) || %w[不可食用 已确认不可食用 丢弃 变质 状态存疑 待确认].include?(item['status'])
+        raise '不宜食用的库存不能在制作确认中盘点。' if recipe_stock_freshness(item) == '不宜食用'
         remaining = Float(line['remaining'])
         raise '实际剩余量无效。' unless remaining.finite? && remaining >= 0
         before << { 'inventoryId' => item['id'], 'item' => item.dup, 'quantity' => 0 }
@@ -834,7 +927,7 @@ server.mount_proc '/' do |req, res|
 
     if req.path == '/' || req.path == '/index.html'
       file_path = File.join(ROOT, 'index.html')
-    elsif req.path.match?(%r{\A/(app\.js|recipes\.js|styles\.css)\z})
+    elsif req.path.match?(%r{\A/(app\.js|recipes\.js|styles\.css|food_knowledge\.json|recipe\.html|recipe-app\.js|recipe-styles\.css|recipe-host\.js|recipe-host\.css|recipe-frame\.js|recipe-frame\.css)\z})
       file_path = File.join(ROOT, req.path.sub(%r{\A/}, ''))
     elsif req.path.match?(%r{\A/assets/[a-zA-Z0-9_/-]+\.(?:jpg|png|webp|json)\z}) && !req.path.include?('..')
       file_path = File.join(ROOT, req.path.sub(%r{\A/}, ''))
@@ -853,7 +946,7 @@ server.mount_proc '/' do |req, res|
       res.body = File.binread(file_path)
       next
     end
-    res['Content-Type'] = file_path.end_with?('.css') ? 'text/css; charset=utf-8' : file_path.end_with?('.js') ? 'application/javascript; charset=utf-8' : 'text/html; charset=utf-8'
+    res['Content-Type'] = file_path.end_with?('.css') ? 'text/css; charset=utf-8' : file_path.end_with?('.js') ? 'application/javascript; charset=utf-8' : file_path.end_with?('.json') ? 'application/json; charset=utf-8' : 'text/html; charset=utf-8'
     res.body = File.read(file_path)
   rescue StandardError => e
     json_response(res, 422, { error: e.message })

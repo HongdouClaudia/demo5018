@@ -17,6 +17,34 @@ TEST_SERVER = InProcessServer.new
 WEBrick::HTTPServer.define_singleton_method(:new) { |**_options| TEST_SERVER }
 load File.expand_path('../server.rb', __dir__)
 class RecipeServerTest < Minitest::Test
+  def test_recipe_adapter_uses_main_freshness_without_changing_the_record
+    item = {'name'=>'西兰花','quantity'=>1,'unit'=>'颗','location'=>'冷藏','purchaseDate'=>'2020-01-01','freshness'=>'新鲜'}
+    original = Marshal.load(Marshal.dump(item))
+    assert_equal '不宜食用', recipe_stock_freshness(item, on: Date.new(2026,11,8))
+    assert_equal original, item
+    assert_equal '不宜食用', recipe_stock_freshness({'name'=>'鸡蛋','status'=>'待确认'})
+  end
+
+  def test_main_and_recipe_assets_are_both_served_with_correct_mime
+    paths = {'/food_knowledge.json'=>'application/json','/recipe.html'=>'text/html','/recipe-app.js'=>'application/javascript','/recipe-host.js'=>'application/javascript','/recipe-frame.js'=>'application/javascript','/recipe-styles.css'=>'text/css','/assets/recipes/tomato-egg.jpg'=>'image/jpeg'}
+    paths.each do |path, mime|
+      req = OpenStruct.new(path:path,request_method:'GET')
+      res = WEBrick::HTTPResponse.new(WEBrick::Config::HTTP)
+      TEST_SERVER.handler.call(req,res)
+      assert_equal 200,res.status,path
+      assert_includes res['Content-Type'],mime,path
+      refute_empty res.body,path
+    end
+  end
+
+  def test_main_inventory_ai_routes_remain_available
+    status, body = call('/api/ai-inventory',{'text'=>''})
+    assert_equal 422,status
+    assert_match '请输入需要放入冰箱',body['error']
+    status, body = call('/api/photo-inventory',{'image'=>''})
+    assert_equal 422,status
+    assert_match '请先拍照或选择图片',body['error']
+  end
   def test_explore_request_does_not_send_inventory_as_selection_criteria
     original_key = ENV['DEEPSEEK_API_KEY']
     ENV['DEEPSEEK_API_KEY'] = 'test-key'

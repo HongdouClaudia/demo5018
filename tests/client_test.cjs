@@ -4,7 +4,7 @@ const elements=new Map();const handlers={};
 const document={getElementById(id){if(!elements.has(id))elements.set(id,{innerHTML:'',hidden:false,classList:{add(){},remove(){}}});return elements.get(id);},querySelector(){return null;},querySelectorAll(){return [];},addEventListener(type,fn){handlers[type]=fn;}};
 const c=vm.createContext({document,window:{addEventListener(){},scrollTo(){},scrollY:0},console,Date,Math,JSON,Map,Set,Number,String,Boolean,Array,setTimeout(){}});
 vm.runInContext(fs.readFileSync(root+'/recipes.js','utf8'),c);
-vm.runInContext(fs.readFileSync(root+'/app.js','utf8').replace(/loadState\(\)\.catch\([\s\S]*$/,''),c);
+vm.runInContext(fs.readFileSync(root+'/recipe-app.js','utf8').replace(/loadState\(\)\.catch\([\s\S]*$/,''),c);
 const run=s=>vm.runInContext(s,c);let assertions=0;
 const check=(s,v=true)=>{assert.deepEqual(JSON.parse(JSON.stringify(run(s))),v,s);assertions++;};
 async function main(){
@@ -129,6 +129,7 @@ run(`queueRecipeImages(['image-test']);`);check(`imageQueue.length`,0);
 
 // Explore rotation only excludes the current batch; older dishes may return.
 c.AbortController=AbortController;
+run(`defaultMeal='dinner';explicitMeal='dinner';mealPlan.roundMeal='dinner';`);
 run(`currentTab='home';state.preferences={allergiesStatus:'none',dietStatus:'none',allergies:[],avoid:[]};mealPlan.active=null;mealPlan.request={dish:'',servings:2,duration:30,mode:'explore',allowAdditionalIngredients:true};mealPlan.intent=null;const oldDish={...testRecipe,title:'旧菜',ingredients:[{name:'土豆',quantity:1,unit:'个'}]},currentDish={...testRecipe,title:'当前菜',ingredients:[{name:'鸡蛋',quantity:1,unit:'个'}]};oldDish.id=stableRecipeId(recommendationKey(oldDish));currentDish.id=stableRecipeId(recommendationKey(currentDish));mealPlan.aiRecipes=[oldDish,currentDish];mealPlan.results=[currentDish.id];mealPlan.seenBySignature[recommendationSignature('dinner')]=[recommendationKey(oldDish),recommendationKey(currentDish)];let sentOptions;api=async(url,options)=>{if(url==='/api/recipe-recommendation'){sentOptions=JSON.parse(options.body);return {recipes:[oldDish,currentDish],intent:{},summary:'测试'};}return {revision:state.revision};};persist=async()=>{};`);
 await run(`refreshRecommendations({rotate:true})`);
 check(`mealPlan.results.length`,1);
@@ -189,5 +190,14 @@ check(`scoreWithout.stockGaps===scoreWith.stockGaps`);
 run(`state.preferences.avoid=['盐'];`);check(`rankedRecipes('dinner',[singleDish]).length`,0);
 run(`state.preferences.avoid=[];mealPlan.request.mode='explore';`);check(`recipeCard('single-check').includes('调味料：食用油、盐 · 请自行核对')`);
 console.log(`${assertions} client assertions passed.`);
+// The integration uses main's canonical food names and one-to-one unit aliases.
+check(`stockNameMatches('番茄','西红柿')`);
+check(`stockUnitMatches('克','g')`);
+check(`stockUnitMatches('斤','g')`,false);
+run(`window.RecipeStockBridge={canonicalName:name=>name==='番茄'?'西红柿':name,freshness:item=>({key:item.name==='西兰花'?'unsafe':item.name==='番茄'?'soon':'fresh'})};`);
+check(`safeInventory({name:'西兰花',freshness:'新鲜'})`,false);
+check(`stockPriority({name:'番茄',freshness:'新鲜'})`);
+check(`stockNameMatches('番茄','西红柿')`);
+console.log('6 shared inventory compatibility assertions passed.');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});
