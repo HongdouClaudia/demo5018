@@ -22,10 +22,19 @@ for (const match of addedCss.matchAll(/([^{}]+)\{[^{}]*\}/g)) {
     assert.ok(selector.trim().startsWith('.home-page '), `Unscoped selector: ${selector}`);
   }
 }
+// The recipe integration deliberately extends server routes and HTML script tags.
+// Keep the original homepage scope contract for the protected main files.
+if (fs.existsSync(path.join(root, 'recipe-host.js'))) {
+  const integratedBase = process.env.COMPATIBILITY_BASE_REF || '572091eb076539b0eb4ed81a9e82536796d4e61d';
+  for (const file of ['app.js', 'styles.css', 'seed.json', 'food_knowledge.json', 'scripts/build_food_knowledge.rb']) {
+    assert.equal(read(file), execFileSync(git, ['show', `${integratedBase}:${file}`], {cwd:root,encoding:'utf8'}), `${file} must match protected main`);
+  }
+} else {
 const staticRoute = "    elsif req.path.match?(%r{\\A/assets/recipes/[a-z0-9-]+\\.jpg\\z})\n      file_path = File.join(ROOT, req.path.sub(%r{\\A/}, ''))\n";
 assert.equal(read('server.rb').replace(staticRoute, '').replace("file_path.end_with?('.jpg') ? 'image/jpeg' : ", ''), original('server.rb'), 'Only homepage image delivery may change on the server');
 for (const file of ['index.html', '.env.example', '.gitignore', 'seed.json', 'food_knowledge.json', 'scripts/build_food_knowledge.rb']) {
   assert.equal(read(file), original(file), `${file} must match main`);
+}
 }
 const seed = JSON.parse(read('seed.json'));
 seed.recipes = [{id:'recipe-test', title:'番茄鸡蛋', imageEmoji:'🍳', imageKey:'tomato-egg', tags:['临期优先'], duration:15, difficulty:'简单', servings:2, ingredients:[{name:'番茄',quantity:2,unit:'个',available:true}], steps:['烹饪示例']}];

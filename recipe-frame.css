@@ -1,0 +1,8 @@
+/* The host owns navigation; no duplicate bottom navigation in the recipe document. */
+.bottom-nav{display:none}
+.phone-shell{padding-bottom:0;min-height:100dvh}
+.page-content{padding-bottom:20px}
+.meal-menu-entry{bottom:14px}
+.cooking-actions{bottom:10px}
+.meal-menu-page .meal-menu-actions{bottom:0}
+@media(min-width:760px){.meal-menu-entry{bottom:14px}.cooking-actions{bottom:10px}}

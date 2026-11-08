@@ -1,0 +1,37 @@
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const vm=require('node:vm');
+const path=require('node:path');
+const root=path.resolve(__dirname,'..');
+const messages=[],handlers={};
+const element=()=>({hidden:false,innerHTML:'',textContent:'',classList:{toggle(){}},append(child){this.child=child;},contentWindow:{postMessage(message,origin){messages.push({message,origin});}}});
+const shell=element(),label=element(),header=element(),app=element();
+const document={body:element(),createElement:element,querySelector(selector){return selector==='.phone-shell'?shell:label;},querySelectorAll(){return [];},addEventListener(type,fn){handlers[type]=fn;}};
+const events={};
+const c=vm.createContext({document,header,app,window:{addEventListener(type,fn){events[type]=fn;}},location:{origin:'http://localhost:4581',hash:'#home'},history:{replaceState(){}},setTimeout,clearTimeout,console});
+vm.runInContext(`let currentTab='home',state={revision:1,profile:{name:'测试用户'}},selectedRecipe=null,returnTab=null,inventoryEntryView=null,photoPreviewUrl='';let mainRenders=0,mainSaves=0;function render(){mainRenders++;}async function persist(){mainSaves++;}async function api(){return {revision:2,profile:{name:'测试用户'},inventory:[{id:'egg',quantity:4}]};}function stopCamera(){}function toast(message){throw new Error(message);}`,c);
+const run=source=>vm.runInContext(source,c);
+const tick=()=>new Promise(resolve=>setImmediate(resolve));
+async function main(){
+ vm.runInContext(fs.readFileSync(path.join(root,'recipe-host.js'),'utf8'),c);
+ run('render()');assert.equal(run('mainRenders'),1);assert.equal(shell.child.hidden,true);
+ run("currentTab='recipes';render()");
+ const frame=shell.child.child;
+ assert.equal(frame.src,'/recipe.html');assert.equal(app.hidden,true);assert.equal(header.hidden,true);
+ run('render()');assert.equal(shell.child.child,frame,'Never remount the cooking document during navigation');
+ await events.message({origin:'https://evil.example',source:frame.contentWindow,data:{channel:'demo5018-recipes',type:'ready'}});
+ assert.equal(messages.length,2,'Wrong-origin ready must not cause activation');
+ await events.message({origin:c.location.origin,source:frame.contentWindow,data:{channel:'demo5018-recipes',type:'ready'}});
+ assert.equal(messages.at(-1).message.type,'activate');
+ events.message({origin:c.location.origin,source:frame.contentWindow,data:{channel:'demo5018-recipes',type:'navigate',tab:'inventory'}});
+ assert.equal(run('currentTab'),'recipes','Wait for saved progress before leaving');
+ const flush=messages.at(-1).message;assert.equal(flush.type,'flush');
+ events.message({origin:c.location.origin,source:{},data:{channel:'demo5018-recipes',type:'flushed',id:flush.id}});
+ await tick();assert.equal(run('currentTab'),'recipes','Wrong-source acknowledgement is ignored');
+ events.message({origin:c.location.origin,source:frame.contentWindow,data:{channel:'demo5018-recipes',type:'flushed',id:flush.id}});
+ await tick();assert.equal(run('currentTab'),'inventory');assert.equal(run('state.inventory[0].quantity'),4);
+ assert.equal(app.hidden,false);assert.equal(header.hidden,false);assert.equal(shell.child.hidden,true);
+ await run('persist()');assert.equal(run('mainSaves'),1);assert.equal(messages.at(-1).message.type,'refresh');
+ console.log('PASS: recipe isolation, trusted message boundary, progress flush and shared inventory refresh.');
+}
+main().catch(error=>{console.error(error);process.exitCode=1;});
