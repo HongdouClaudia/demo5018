@@ -255,7 +255,7 @@ function nutritionRecommendation(balance,shopping=[]){
   const avoidText=avoid.join(' ');
   if(balance.score===null){
     const preferenceHint=flavors[0]?`，也会照顾你喜欢的${flavors[0]}口味`:'';
-    return {text:balance.total?`🫘 ${season}也要吃得丰富些呀！把食材数量补完整${preferenceHint}，我就能给你更贴心的采购提醒。`:`🫘 ${season}记得给冰箱添点喜欢的食材呀！录入库存后，我会结合你的饮食偏好给出建议。`};
+    return {text:balance.total?`🫘 ${season}也要吃得丰富些呀！把食材数量补完整${preferenceHint}，这里就能给出更贴心的采购提醒。`:`🫘 ${season}记得给冰箱添点喜欢的食材呀！录入库存后，系统会结合你的饮食偏好给出建议。`};
   }
 
   const planned=new Set(shopping.filter(item=>item.status==='pending').map(item=>resolveFoodProfile(item.name)?.group).filter(Boolean));
@@ -300,7 +300,7 @@ function nutritionRecommendation(balance,shopping=[]){
   const variants=[
     `🫘 ${season}可以吃得更丰富些呀！${preferenceLead}下次采购可优先看看${categoryText}。`,
     `🫘 给下一餐添点新变化吧！${preferenceLead}${categoryText}会是不错的补充。`,
-    `🫘 最近的饮食节奏我记住啦！下次采购优先补充${categoryText}，搭配起来会更均衡。`
+    `🫘 最近的饮食节奏已经记下啦！下次采购优先补充${categoryText}，搭配起来会更均衡。`
   ];
   const seed=[today,...picks,...flavors,...needs].join('').split('').reduce((sum,char)=>sum+char.charCodeAt(0),0);
   const main=variants[seed%variants.length];
@@ -322,7 +322,7 @@ function dailyDietReview(){
   const activeGroups=nutritionGroups.filter(group=>totals[group]>0);
   const ranked=[...activeGroups].sort((a,b)=>totals[b]-totals[a]);
   const labels={'谷薯主食':'主食类','蔬菜':'蔬菜类','水果':'水果类','蛋白质':'蛋白质类','奶类':'奶类'};
-  let summary='今天还没有烹饪记录。完成做饭并确认用量后，我会在这里帮你做当天复盘。';
+  let summary='今天还没有烹饪记录。完成做饭并确认用量后，这里会生成当天复盘。';
   if(operations.length){
     const main=ranked.slice(0,2).map(group=>labels[group]).join('和');
     const missing=nutritionGroups.filter(group=>totals[group]===0);
@@ -334,12 +334,10 @@ function dailyDietReview(){
 }
 function dailyDietReviewModal(){
   const review=dailyDietReview();
-  const max=Math.max(1,...Object.values(review.totals));
   const rows=nutritionGroups.map((group,index)=>{
     const value=review.totals[group];
-    const width=Math.min(100,value/max*100);
     const label=value?Number(value.toFixed(1))+' 份':'暂无记录';
-    return `<div class="daily-review-detail-row"><div><i style="background:${nutritionColors[index]}"></i><span>${group}</span><b>${label}</b></div><span><span style="width:${width.toFixed(1)}%;background:${nutritionColors[index]}"></span></span></div>`;
+    return `<div class="daily-review-detail-row"><i style="background:${nutritionColors[index]}"></i><span>${group}</span><b>${label}</b></div>`;
   }).join('');
   modal(`<h2>今日饮食复盘</h2><div class="daily-review-modal-summary"><div><b>${review.operations.length}</b><span>次烹饪</span></div><div><b>${review.activeGroups.length}</b><span>类食材</span></div><div><b>${review.recognized}</b><span>项消耗记录</span></div></div><p class="daily-review-modal-copy">${review.summary}</p><div class="daily-review-detail">${rows}</div><p class="form-hint">仅统计今天已确认的烹饪扣库记录，不代表实际营养摄入，仅供参考。</p><div class="modal-actions"><button type="button" class="primary-button" data-action="close-modal">知道了</button></div>`);
 }
