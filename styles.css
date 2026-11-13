@@ -121,3 +121,9 @@
 .home-recommendation-next .primary-button{min-height:42px;padding:8px 12px;font-size:12px}
 .home-recommendation-next p{font-size:11px;line-height:1.5;color:var(--sub);margin:0 0 4px;text-align:right}
 .home-page .nutrition-chart-note{font-size:10px!important;color:var(--sub)!important;line-height:1.5;margin-top:10px!important}
+
+/* Homepage assistant results */
+.home-page .agent-result{scroll-margin-top:78px}
+.home-page .agent-advice{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;line-height:1.5;margin-bottom:6px}
+.home-page .agent-result>.section-title{margin-top:12px}
+.home-page .agent-empty-recipes{font-size:12px;line-height:1.5;color:var(--sub);margin:4px 0 0}
