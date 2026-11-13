@@ -511,6 +511,17 @@ app.addEventListener('click', event => {
     if(recipe)recommendationPreview(recipe,'每日推荐');
   }
 });
+// Saved daily recommendations and AI recommendations share one purchase flow.
+// Resolve the recipe from either source before the legacy handler runs.
+document.addEventListener('click', event => {
+  const button=event.target.closest('[data-action="open-recommendation-shopping"][data-recipe-id]');
+  if(!button)return;
+  const recipe=findRecipe(button.dataset.recipeId);
+  if(!recipe)return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  recommendationShoppingModal(recipe);
+}, true);
 function homeShopping(){const pending=state.shopping.filter(item=>item.status==='pending');const bought=state.shopping.filter(item=>item.status==='bought');return `<div class="section-title"><h2>采购清单</h2><span class="meta">待买 ${pending.length} 项</span></div><section class="card">${pending.length?pending.map(shoppingRow).join(''):`<div class="empty"><span class="empty-icon">🧺</span><b>待买清单是空的</b><span>从菜谱导入缺料，或手动新增食材。</span></div>`}<div class="bottom-action"><button class="secondary-button" data-action="add-shopping">＋ 新增食材</button>${bought.length?'<button class="primary-button" data-action="sync-shopping">一键同步入库</button>':'<button class="secondary-button" data-tab-go="recipes">去菜谱补货</button>'}</div></section>`;}
 function inventory(){
   if(inventoryEntryView==='manual')return manualInventoryEntry();
