@@ -324,6 +324,26 @@ function sortAgentRecipes(recipes){
     return b.count-a.count||a.earliest-b.earliest||recipeMissingItems(left).length-recipeMissingItems(right).length;
   });
 }
+function fallbackAgentResult(mode,previousTitles=[]){
+  const avoided=[...(state.preferences?.allergies||[]),...(state.preferences?.avoid||[])].map(canonicalFoodName).filter(Boolean);
+  const safe=recipe=>(recipe.ingredients||[]).every(item=>{
+    const name=canonicalFoodName(item.name);
+    return !avoided.some(food=>name.includes(food)||food.includes(name));
+  })&&!avoided.some(food=>canonicalFoodName(recipe.title).includes(food));
+  let candidates=(typeof recipeLibrary==='undefined'?[]:recipeLibrary).filter(safe);
+  if(mode==='dinner')candidates=candidates.filter(recipe=>(recipe.mealTypes||[]).includes('dinner')&&Number(recipe.duration)<=30);
+  if(mode==='expiry')candidates=candidates.filter(recipe=>recipeExpiryPriority(recipe).count>0);
+  candidates=sortAgentRecipes(candidates);
+  if(previousTitles.length){
+    const different=candidates.filter(recipe=>!previousTitles.includes(recipe.title));
+    if(different.length)candidates=different;
+  }
+  const recipes=candidates.slice(0,2).map(recipe=>{
+    const missing=recipeMissingItems(recipe);
+    return {...recipe,reason:'熟悉的家常做法，适合今天在家做。',tags:[...(recipeExpiryPriority(recipe).count?['临期优先']:[]),missing.length?'需要补购':'库存充足'],ingredients:(recipe.ingredients||[]).map(item=>({...item,available:usableStockFor(item.name).length>0}))};
+  });
+  return {recipes,alerts:[],shopping:recipes.length?recipeMissingItems(recipes[0]).map(item=>({...item,quantity:item.suggestedQuantity})):[],emptyMessage:mode==='expiry'?'目前没有可安全使用的临期食材，可以看看其他菜谱。':'暂时没有合适的两人晚餐菜谱，可以换个条件试试。'};
+}
 function recommendationShoppingModal(recipe){
   recommendationShoppingDraft=recipe?recipeMissingItems(recipe):(agentResult?.shopping||[]).map(item=>({...item,suggestedQuantity:Number(item.quantity)||1,unit:item.unit||'个',category:item.category||'其他'}));
   if(!recommendationShoppingDraft.length){toast('这道菜无需补购');return;}
@@ -357,7 +377,7 @@ function agentPanel(result){
   const suggestions=Array.isArray(result.recipes)?result.recipes:[];
   const first=suggestions[0];
   const second=suggestions[1];
-  const advice=first?(second?'今天可以做'+first.title+'，也可以试试'+second.title+'！都是常见家常菜，做起来不复杂。':'今天推荐'+first.title+'！这道菜做法家常，适合在家做。'):'这次还没找到合适的做法，可以换个口味再试试。';
+  const advice=first?(second?'今天可以做'+first.title+'，也可以试试'+second.title+'！都是常见家常菜，做起来不复杂。':'今天推荐'+first.title+'！这道菜做法家常，适合在家做。'):(result.emptyMessage||'这次还没找到合适的做法，可以换个口味再试试。');
   const recommendations=suggestions.length?'<div class="recipe-scroll">'+suggestions.map(recommendationCard).join('')+'</div>':'<p class="agent-empty-recipes">这次暂时没有合适的菜谱，换个做法再问问我吧。</p>';
   const alerts=result.alerts?.length?'<div class="section-title"><h2>预警</h2><button data-tab-go="inventory">去处理</button></div>'+result.alerts.map(a=>'<div class="alert-row"><span class="alert-dot"></span><div><strong>'+esc(a.name)+'</strong><p>'+esc(a.message)+'</p></div></div>').join(''):'';
   const shoppingItems=first?recipeMissingItems(first):(result.shopping||[]);
@@ -505,12 +525,17 @@ async function ask(question,quickMode=''){
   try{
     const recipeCatalog=(typeof recipeLibrary==='undefined'?[]:recipeLibrary).map(recipe=>({id:recipe.id,title:recipe.title,duration:recipe.duration,mealTypes:recipe.mealTypes||[],ingredients:(recipe.ingredients||[]).map(item=>item.name)}));
     const request=(text,avoidTitles=previousTitles)=>api('/api/agent',{method:'POST',body:JSON.stringify({question:text,recipeCatalog,quickMode:mode,avoidTitles})});
-    let result=await request(question);
+    let result;
+    try{result=await request(question)}catch(error){if(!['expiry','dinner'].includes(mode))throw error;result=fallbackAgentResult(mode,previousTitles);}
     if((!result.recipes?.length&&/推荐|做|吃|早餐|午餐|晚餐|菜谱/.test(question))||(previousTitles.length&&result.recipes?.length&&result.recipes.every(recipe=>previousTitles.includes(recipe.title)))){
       try{
         const retry=await request(question+'。请从已有菜谱里选择符合忌口的常见家常菜；若有合适的不同菜谱，请避开上一次的菜名。缺料请列入采购建议。');
         if(retry.recipes?.length&&(!previousTitles.length||retry.recipes.some(recipe=>!previousTitles.includes(recipe.title))))result=retry;
       }catch(error){/* Keep the first response when the optional retry fails. */}
+    }
+    if(['expiry','dinner'].includes(mode)&&(!result.recipes?.length||(previousTitles.length&&result.recipes.every(recipe=>previousTitles.includes(recipe.title))))){
+      const fallback=fallbackAgentResult(mode,previousTitles);
+      if(fallback.recipes.length||!result.recipes?.length)result=fallback;
     }
     result.recipes=sortAgentRecipes(result.recipes||[]);
     agentResult=result;
