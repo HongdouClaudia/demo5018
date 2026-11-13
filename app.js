@@ -228,7 +228,24 @@ function nutritionHealthCard(balance) {
     <p class="nutrition-disclaimer">仅供参考。</p>
   </section>`;
 }
-function nutritionRecommendation(balance,shopping=[]){if(balance.score===null)return {text:balance.total?'🫘 把食材和数量记下来，我再帮你想搭配！':'🫘 先把冰箱里的食材记下来，我再帮你想搭配！',items:[]};const advice={'谷薯主食':{label:'主食',text:'燕麦或薯类',item:{name:'燕麦',quantity:1,unit:'袋',category:'其他'}},'蔬菜':{label:'蔬菜',text:'绿叶菜',item:{name:'菠菜',quantity:1,unit:'把',category:'蔬果'}},'水果':{label:'水果',text:'苹果',item:{name:'苹果',quantity:2,unit:'个',category:'蔬果'}},'蛋白质':{label:'蛋白质食材',text:'豆腐或鸡蛋',item:{name:'豆腐',quantity:1,unit:'盒',category:'其他'}},'奶类':{label:'奶类',text:'牛奶或酸奶',item:{name:'牛奶',quantity:1,unit:'盒',category:'其他'}}};const missing=nutritionGroups.filter(group=>balance.groups[group].servings===0);const planned=new Set(shopping.filter(item=>item.status==='pending').map(item=>resolveFoodProfile(item.name)?.group).filter(Boolean));const candidates=missing.filter(group=>!planned.has(group));const picks=candidates.length?candidates.slice(0,2):[...nutritionGroups].filter(group=>!planned.has(group)).sort((a,b)=>balance.groups[a].servings-balance.groups[b].servings).slice(0,2);if(!picks.length)return {text:'🫘 需要补的食材已经在采购清单里，买回后记得加入冰箱库存！',items:[]};const isMissing=candidates.length>0;return {text:isMissing?`🫘 冰箱里的${picks.map(group=>advice[group].label).join('和')}有点少，下次采购可以添些${picks.map(group=>advice[group].text).join('、')}呀！`:`🫘 ${picks.map(group=>advice[group].label).join('和')}库存不多，下次采购记得补些${picks.map(group=>advice[group].text).join('、')}哦！`,items:picks.map(group=>advice[group].item)};}
+function nutritionRecommendation(balance,shopping=[]){
+  const month=new Date().getMonth()+1;
+  const season=month>=3&&month<=5?'春日':month>=6&&month<=8?'夏天':month>=9&&month<=11?'秋日':'冬日';
+  const labels={'谷薯主食':'主食类','蔬菜':'蔬菜类','水果':'水果类','蛋白质':'蛋白质类','奶类':'奶类'};
+  if(balance.score===null){
+    return {text:balance.total?`🫘 ${season}也要吃得丰富些呀！把食材数量补完整，我就能给你更贴心的采购提醒。`:`🫘 ${season}记得给冰箱添点喜欢的食材呀！录入库存后，我会帮你看看还缺哪些大类。`};
+  }
+  const planned=new Set(shopping.filter(item=>item.status==='pending').map(item=>resolveFoodProfile(item.name)?.group).filter(Boolean));
+  const missing=nutritionGroups.filter(group=>balance.groups[group].servings===0);
+  const unplannedMissing=missing.filter(group=>!planned.has(group));
+  const weakest=[...nutritionGroups].filter(group=>!planned.has(group)).sort((a,b)=>balance.groups[a].servings-balance.groups[b].servings);
+  const picks=(unplannedMissing.length?unplannedMissing:weakest).slice(0,2);
+  if(!picks.length){
+    return {text:`🫘 ${season}的采购安排已经很周到了！清单里的食材买齐后，记得及时放进冰箱呀。`};
+  }
+  const categoryText=picks.map(group=>labels[group]).join('和');
+  return {text:`🫘 ${season}也要吃得丰富些呀！目前${categoryText}偏少，下次采购时可以优先看看这些类别。`};
+}
 function renderHome(){
   const expiring=state.inventory.filter(item=>freshnessFor(item).key==='soon');
   const pending=state.shopping.filter(item=>item.status==='pending');
@@ -244,33 +261,8 @@ function renderHome(){
   <section class="card agent-card"><div class="agent-intro"><div class="agent-avatar">✦</div><div><strong>问问厨房管家</strong><p>我会优先为你消耗现有和临期食材</p></div></div><form class="ask-row" id="ask-form"><input id="agent-question" required placeholder="例如：30 分钟做两人晚餐" /><button type="submit">提问</button></form><div class="quick-chips">${['优先用掉快过期食材','30 分钟做两人晚餐','看看我还缺什么'].map((q,i)=>`<button class="chip" data-action="quick-ask" data-quick-mode="${['expiry','dinner','shopping'][i]}" data-question="${q}">${q}</button>`).join('')}</div></section>
   ${agentLoading?'<section class="card loading"><span class="spinner"></span>厨房管家正在分析你的库存与偏好…</section>':''}
   ${agentResult?agentPanel(agentResult):''}
-  <div class="section-title"><h2>饮食小提示</h2></div><section class="card diet-tip-card"><p class="result-summary diet-tip-text">${tip.text}</p><p class="meta diet-tip-note">按库存整理，仅供参考</p>${tip.items.length?`<button class="tip-shopping-button" data-home-action="add-tip-shopping">＋ 加入采购清单</button>`:''}</section></div>`;
+  <div class="section-title"><h2>饮食小提示</h2></div><section class="card diet-tip-card"><p class="result-summary diet-tip-text">${tip.text}</p><p class="meta diet-tip-note">按库存整理，仅供参考</p><button class="tip-shopping-button" data-tab-go="shopping">进入采购</button></section></div>`;
 }
-
-// This listener handles only homepage controls; shared navigation and forms remain unchanged.
-app.addEventListener('click', async event => {
-  const button = event.target.closest('.home-page [data-home-action="add-tip-shopping"]');
-  if (currentTab !== 'home' || !button || button.disabled) return;
-  const pending = state.shopping.filter(item => item.status === 'pending');
-  const names = new Set(pending.map(item => item.name));
-  const items = nutritionRecommendation(inventoryBalance(state.inventory), pending).items
-    .filter(item => !names.has(item.name));
-  if (!items.length) { toast('推荐食材已在采购清单中'); return; }
-  const additions = items.map(item => ({...item, id:`shop-home-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    source:'库存搭配建议', status:'pending', completedAt:''}));
-  button.disabled = true;
-  state.shopping.push(...additions);
-  try {
-    await persist();
-    toast(`已将 ${additions.length} 种食材加入采购清单`);
-    if (currentTab === 'home') render();
-  } catch (error) {
-    const ids = new Set(additions.map(item => item.id));
-    state.shopping = state.shopping.filter(item => !ids.has(item.id));
-    button.disabled = false;
-    toast('保存失败，请重试。');
-  }
-});
 return {render:renderHome,recipeImage};
 })();
 // END HOMEPAGE-ONLY MODULE
