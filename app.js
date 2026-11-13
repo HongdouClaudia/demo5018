@@ -228,23 +228,83 @@ function nutritionHealthCard(balance) {
     <p class="nutrition-disclaimer">仅供参考。</p>
   </section>`;
 }
+function recentConsumptionByGroup(days=14){
+  const totals=Object.fromEntries(nutritionGroups.map(group=>[group,0]));
+  const cutoff=Date.parse(`${today}T12:00:00`)-days*86400000;
+  for(const operation of state.cookOperations||[]){
+    const date=String(operation.createdAt||'').slice(0,10);
+    const time=Date.parse(`${date}T12:00:00`);
+    if(operation.undone||!Number.isFinite(time)||time<cutoff)continue;
+    for(const line of operation.consumption||[]){
+      if(!line.item)continue;
+      const portion=estimatedPortions(line.item,Number(line.quantity));
+      if(portion)totals[portion.group]+=portion.servings;
+    }
+  }
+  return totals;
+}
 function nutritionRecommendation(balance,shopping=[]){
   const month=new Date().getMonth()+1;
   const season=month>=3&&month<=5?'春日':month>=6&&month<=8?'夏天':month>=9&&month<=11?'秋日':'冬日';
   const labels={'谷薯主食':'主食类','蔬菜':'蔬菜类','水果':'水果类','蛋白质':'蛋白质类','奶类':'奶类'};
+  const preferences=state.preferences||{};
+  const flavors=(preferences.flavors||[]).map(String).filter(Boolean);
+  const needs=(preferences.needs||[]).map(String);
+  const avoid=[...(preferences.avoid||[]),...(preferences.allergies||[])].map(String);
+  const preferenceText=[...flavors,...needs].join(' ');
+  const avoidText=avoid.join(' ');
   if(balance.score===null){
-    return {text:balance.total?`🫘 ${season}也要吃得丰富些呀！把食材数量补完整，我就能给你更贴心的采购提醒。`:`🫘 ${season}记得给冰箱添点喜欢的食材呀！录入库存后，我会帮你看看还缺哪些大类。`};
+    const preferenceHint=flavors[0]?`，也会照顾你喜欢的${flavors[0]}口味`:'';
+    return {text:balance.total?`🫘 ${season}也要吃得丰富些呀！把食材数量补完整${preferenceHint}，我就能给你更贴心的采购提醒。`:`🫘 ${season}记得给冰箱添点喜欢的食材呀！录入库存后，我会结合你的饮食偏好给出建议。`};
   }
+
   const planned=new Set(shopping.filter(item=>item.status==='pending').map(item=>resolveFoodProfile(item.name)?.group).filter(Boolean));
-  const missing=nutritionGroups.filter(group=>balance.groups[group].servings===0);
-  const unplannedMissing=missing.filter(group=>!planned.has(group));
-  const weakest=[...nutritionGroups].filter(group=>!planned.has(group)).sort((a,b)=>balance.groups[a].servings-balance.groups[b].servings);
-  const picks=(unplannedMissing.length?unplannedMissing:weakest).slice(0,2);
+  const expiring=new Set((state.inventory||[]).filter(item=>freshnessFor(item).key==='soon').map(item=>resolveFoodProfile(item.name)?.group).filter(Boolean));
+  const recent=recentConsumptionByGroup(14);
+  const maxRecent=Math.max(1,...Object.values(recent));
+  const seasonalGroups={
+    '春日':['蔬菜','水果'],
+    '夏天':['蔬菜','水果','奶类'],
+    '秋日':['蔬菜','水果','谷薯主食'],
+    '冬日':['谷薯主食','蛋白质','蔬菜']
+  }[season]||[];
+  const blockedGroups=new Set();
+  if(/牛奶|乳制品|乳糖|奶类/.test(avoidText))blockedGroups.add('奶类');
+  if(/蛋|鸡蛋/.test(avoidText)&&/肉|海鲜|豆/.test(avoidText))blockedGroups.add('蛋白质');
+
+  const ranked=nutritionGroups
+    .filter(group=>!planned.has(group)&&!blockedGroups.has(group))
+    .map(group=>{
+      const servings=Number(balance.groups[group]?.servings)||0;
+      const gap=Math.max(0,3-servings)/3;
+      const usage=recent[group]/maxRecent;
+      const seasonBoost=seasonalGroups.includes(group)?0.18:0;
+      let preferenceBoost=0;
+      if(/高蛋白|增肌|健身/.test(preferenceText)&&group==='蛋白质')preferenceBoost+=0.35;
+      if(/素食/.test(preferenceText)&&['蔬菜','蛋白质'].includes(group))preferenceBoost+=0.2;
+      if(/控糖|低碳/.test(preferenceText)&&['蔬菜','蛋白质'].includes(group))preferenceBoost+=0.18;
+      if(/均衡|营养/.test(preferenceText))preferenceBoost+=0.08;
+      const expiryPenalty=expiring.has(group)?0.45:0;
+      return {group,score:gap*0.55+usage*0.22+seasonBoost+preferenceBoost-expiryPenalty};
+    })
+    .sort((a,b)=>b.score-a.score);
+  const picks=ranked.filter(item=>item.score>0.12).slice(0,2).map(item=>item.group);
+
   if(!picks.length){
-    return {text:`🫘 ${season}的采购安排已经很周到了！清单里的食材买齐后，记得及时放进冰箱呀。`};
+    return {text:`🫘 ${season}的采购安排已经很周到啦！先把清单里的食材买齐，再按家里的消耗慢慢补充就好。`};
   }
+
   const categoryText=picks.map(group=>labels[group]).join('和');
-  return {text:`🫘 ${season}也要吃得丰富些呀！目前${categoryText}偏少，下次采购时可以优先看看这些类别。`};
+  const preferenceLead=flavors[0]?`按你喜欢的${flavors[0]}口味来搭配，`:'';
+  const expiryLead=expiring.size?'家里还有临期食材，记得先安排进这几餐哦！':'';
+  const variants=[
+    `🫘 ${season}可以吃得更丰富些呀！${preferenceLead}下次采购可优先看看${categoryText}。`,
+    `🫘 给下一餐添点新变化吧！${preferenceLead}${categoryText}会是不错的补充。`,
+    `🫘 最近的饮食节奏我记住啦！下次采购优先补充${categoryText}，搭配起来会更均衡。`
+  ];
+  const seed=[today,...picks,...flavors,...needs].join('').split('').reduce((sum,char)=>sum+char.charCodeAt(0),0);
+  const main=variants[seed%variants.length];
+  return {text:expiryLead?`${main} ${expiryLead}`:main};
 }
 function renderHome(){
   const expiring=state.inventory.filter(item=>freshnessFor(item).key==='soon');
