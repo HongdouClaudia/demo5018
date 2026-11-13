@@ -104,3 +104,20 @@
 .home-page .nutrition-progress-track>span{display:block;height:100%;border-radius:inherit}
 .home-page .nutrition-chart-note{font-size:10px!important;margin-top:10px!important;line-height:1.5}
 @media(max-width:360px){.home-page .nutrition-breakdown{gap:9px}.home-page .nutrition-legend-item b,.home-page .nutrition-progress-item b{font-size:9px}}
+
+/* Homepage recommendation preview. */
+.modal:has(.home-recommendation-modal){position:relative}
+.home-recommendation-modal{padding:2px 2px 0}
+.home-recommendation-modal>.eyebrow{margin:0 0 6px;color:var(--brand)}
+.home-recommendation-modal h2{padding-right:36px;margin:0 0 16px;line-height:1.35}
+.home-recommendation-copy{display:grid;gap:7px}
+.home-recommendation-copy strong{font-size:13px;color:var(--ink)}
+.home-recommendation-copy p{font-size:13px;line-height:1.6;color:var(--sub);margin:0 0 10px}
+.home-recommendation-footer{display:flex;align-items:flex-end;gap:14px;margin-top:12px;padding-top:14px;border-top:1px solid var(--line)}
+.home-recommendation-image{width:114px;height:96px;flex:none;border-radius:13px;overflow:hidden;background:linear-gradient(135deg,#ffe1c8,#f5a27f);display:grid;place-items:center}
+.home-recommendation-image img{width:100%;height:100%;object-fit:cover}
+.home-recommendation-image span{font-size:42px}
+.home-recommendation-next{flex:1;min-width:0;display:flex;align-items:flex-end;justify-content:flex-end;min-height:96px}
+.home-recommendation-next .primary-button{min-height:42px;padding:8px 12px;font-size:12px}
+.home-recommendation-next p{font-size:11px;line-height:1.5;color:var(--sub);margin:0 0 4px;text-align:right}
+.home-page .nutrition-chart-note{font-size:10px!important;color:var(--sub)!important;line-height:1.5;margin-top:10px!important}
