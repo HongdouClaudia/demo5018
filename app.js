@@ -222,8 +222,8 @@ function nutritionHealthCard(balance) {
   const available = balance.score !== null;
   return `<section class="card health-card">
     <div class="health-heading"><div><span class="eyebrow">仅统计冰箱现有食材</span><h2>库存营养均衡度</h2></div><strong class="health-score">${available ? `${balance.score}<small> / 100</small>` : '--'}</strong></div>
-    ${available ? `<div class="health-track"><span style="width:${balance.score}%"></span></div><p>类别覆盖 ${nutritionGroups.filter(group=>balance.groups[group].servings>0).length}/${nutritionGroups.length} 类 · 已识别 ${balance.included}/${balance.total} 种食材</p><details class="nutrition-details"><summary class="nutrition-action">查看库存构成</summary>${nutritionBreakdown(balance)}</details>` : `<p>目前可识别 ${balance.included}/${balance.total} 种食材，数据不足，暂不评分。</p><button class="nutrition-action" data-tab-go="inventory">补全库存</button>`}
-    <p class="nutrition-disclaimer">库存占比按现有食材估算，进度仅统计今日烹饪扣库、不代表实际摄入，仅供参考。</p>
+    ${available ? `<div class="health-track"><span style="width:${balance.score}%"></span></div><p>类别覆盖 ${nutritionGroups.filter(group=>balance.groups[group].servings>0).length}/${nutritionGroups.length} 类 · 已识别 ${balance.included}/${balance.total} 种食材</p><details class="nutrition-details"><summary class="nutrition-action">查看库存构成</summary>${nutritionBreakdown(balance)}<p class="nutrition-chart-note">库存占比按现有食材估算，进度仅统计今日烹饪扣库，不代表实际摄入。</p></details>` : `<p>目前可识别 ${balance.included}/${balance.total} 种食材，数据不足，暂不评分。</p><button class="nutrition-action" data-tab-go="inventory">补全库存</button>`}
+    <p class="nutrition-disclaimer">仅供参考。</p>
   </section>`;
 }
 function nutritionRecommendation(balance,shopping=[]){if(balance.score===null)return {text:balance.total?'🫘 把食材和数量记下来，我再帮你想搭配！':'🫘 先把冰箱里的食材记下来，我再帮你想搭配！',items:[]};const advice={'谷薯主食':{label:'主食',text:'燕麦或薯类',item:{name:'燕麦',quantity:1,unit:'袋',category:'其他'}},'蔬菜':{label:'蔬菜',text:'绿叶菜',item:{name:'菠菜',quantity:1,unit:'把',category:'蔬果'}},'水果':{label:'水果',text:'苹果',item:{name:'苹果',quantity:2,unit:'个',category:'蔬果'}},'蛋白质':{label:'蛋白质食材',text:'豆腐或鸡蛋',item:{name:'豆腐',quantity:1,unit:'盒',category:'其他'}},'奶类':{label:'奶类',text:'牛奶或酸奶',item:{name:'牛奶',quantity:1,unit:'盒',category:'其他'}}};const missing=nutritionGroups.filter(group=>balance.groups[group].servings===0);const planned=new Set(shopping.filter(item=>item.status==='pending').map(item=>resolveFoodProfile(item.name)?.group).filter(Boolean));const candidates=missing.filter(group=>!planned.has(group));const picks=candidates.length?candidates.slice(0,2):[...nutritionGroups].filter(group=>!planned.has(group)).sort((a,b)=>balance.groups[a].servings-balance.groups[b].servings).slice(0,2);if(!picks.length)return {text:'🫘 需要补的食材已经在采购清单里，买回后记得加入冰箱库存！',items:[]};const isMissing=candidates.length>0;return {text:isMissing?`🫘 冰箱里的${picks.map(group=>advice[group].label).join('和')}有点少，下次采购可以添些${picks.map(group=>advice[group].text).join('、')}呀！`:`🫘 ${picks.map(group=>advice[group].label).join('和')}库存不多，下次采购记得补些${picks.map(group=>advice[group].text).join('、')}哦！`,items:picks.map(group=>advice[group].item)};}
@@ -269,14 +269,42 @@ app.addEventListener('click', async event => {
     toast('保存失败，请重试。');
   }
 });
-return {render:renderHome};
+return {render:renderHome,recipeImage};
 })();
 // END HOMEPAGE-ONLY MODULE
 
 function home(){
   return homepage.render();
 }
-function agentPanel(result){return `<section class="card"><p class="result-summary"><strong>管家建议：</strong>${esc(result.summary||'已为你整理好建议。')}</p>${result.insight?`<div class="result-insight">${esc(result.insight)}</div>`:''}${result.alerts?.length?`<div class="section-title"><h2>预警</h2><button data-tab-go="inventory">去处理</button></div>${result.alerts.map(a=>`<div class="alert-row"><span class="alert-dot"></span><div><strong>${esc(a.name)}</strong><p>${esc(a.message)}</p></div></div>`).join('')}`:''}${result.recipes?.length?`<div class="section-title"><h2>为你推荐</h2><button data-tab-go="recipes">全部菜谱</button></div><div class="recipe-scroll">${result.recipes.slice(0,3).map(recipeCard).join('')}</div>`:''}${result.shopping?.length?`<div class="section-title"><h2>建议补购</h2><button data-action="import-shopping">加入采购清单</button></div>${result.shopping.map(i=>`<div class="alert-row"><span>＋</span><div><strong>${esc(i.name)} ${esc(i.quantity)}${esc(i.unit)}</strong><p>用于 ${esc(i.source||'推荐菜谱')}</p></div></div>`).join('')}`:''}</section>`;}
+function libraryRecipeFor(recipe){
+  const title=String(recipe?.title||'').trim().replace(/\s+/g,'');
+  return (typeof recipeLibrary==='undefined'?[]:recipeLibrary).find(item=>item.id===recipe?.id||item.title.replace(/\s+/g,'')===title)||null;
+}
+function recommendationCard(recipe,index){
+  const library=libraryRecipeFor(recipe);
+  const image=homepage.recipeImage(library||recipe);
+  const visual=image?'<img class="recipe-image" src="'+esc(image)+'" alt="'+esc(recipe.title)+'" loading="lazy">':'<span class="recipe-emoji">'+esc(recipe.imageEmoji||'🍲')+'</span>';
+  return '<button type="button" class="recipe-card" data-home-action="open-recommendation-preview" data-index="'+index+'"><div class="recipe-visual">'+visual+'<span class="recipe-visual-label">为你推荐</span></div><div class="recipe-body"><h3>'+esc(recipe.title)+'</h3><div class="meta"><span>'+esc(recipe.duration||30)+' 分钟</span><span>·</span><span>'+esc(recipe.difficulty||'简单')+'</span></div>'+tags(recipe.tags||[])+'</div></button>';
+}
+function recommendationPreview(recipe){
+  const library=libraryRecipeFor(recipe);
+  const details=library||recipe;
+  const image=homepage.recipeImage(details);
+  const ingredients=Array.isArray(details.ingredients)?details.ingredients:[];
+  const steps=Array.isArray(details.steps)?details.steps:[];
+  const ingredientNames=ingredients.map(item=>typeof item==='string'?item:item?.name).filter(Boolean).slice(0,8);
+  const method=steps.map(step=>typeof step==='string'?step:step?.text||step?.title).filter(Boolean).slice(0,3).join(' ');
+  const photo=image?'<img src="'+esc(image)+'" alt="'+esc(recipe.title)+'" loading="lazy">':'<span aria-label="菜品图片待补充">'+esc(recipe.imageEmoji||'🍲')+'</span>';
+  const next=library?'<button type="button" class="primary-button" data-action="open-recipe" data-id="'+esc(library.id)+'">查看完整菜谱 ›</button>':'<p>这道菜暂未录入菜谱，先看看上面的简要做法吧。</p>';
+  modal('<div class="home-recommendation-modal"><button type="button" class="modal-close" aria-label="关闭" data-action="close-modal">×</button><p class="eyebrow">为你推荐</p><h2>'+esc(recipe.title||'这道菜')+'</h2><div class="home-recommendation-copy"><strong>需要的食材</strong><p>'+esc(ingredientNames.length?ingredientNames.join('、'):'食材信息暂未补齐')+'</p><strong>简单做法</strong><p>'+esc(method||'做法信息暂未补齐')+'</p></div><div class="home-recommendation-footer"><div class="home-recommendation-image">'+photo+'</div><div class="home-recommendation-next">'+next+'</div></div></div>');
+}
+function agentPanel(result){return `<section class="card"><p class="result-summary"><strong>管家建议：</strong>${esc(result.summary||'已为你整理好建议。')}</p>${result.insight?`<div class="result-insight">${esc(result.insight)}</div>`:''}${result.alerts?.length?`<div class="section-title"><h2>预警</h2><button data-tab-go="inventory">去处理</button></div>${result.alerts.map(a=>`<div class="alert-row"><span class="alert-dot"></span><div><strong>${esc(a.name)}</strong><p>${esc(a.message)}</p></div></div>`).join('')}`:''}${result.recipes?.length?`<div class="section-title"><h2>为你推荐</h2><button data-tab-go="recipes">全部菜谱</button></div><div class="recipe-scroll">${result.recipes.map(recommendationCard).join('')}</div>`:''}${result.shopping?.length?`<div class="section-title"><h2>建议补购</h2><button data-action="import-shopping">加入采购清单</button></div>${result.shopping.map(i=>`<div class="alert-row"><span>＋</span><div><strong>${esc(i.name)} ${esc(i.quantity)}${esc(i.unit)}</strong><p>用于 ${esc(i.source||'推荐菜谱')}</p></div></div>`).join('')}`:''}</section>`;}
+app.addEventListener('click', event => {
+  const button=event.target.closest('.home-page [data-home-action="open-recommendation-preview"]');
+  if(currentTab!=='home'||!button)return;
+  const recipe=agentResult?.recipes?.[Number(button.dataset.index)];
+  if(recipe)recommendationPreview(recipe);
+});
 function homeShopping(){const pending=state.shopping.filter(item=>item.status==='pending');const bought=state.shopping.filter(item=>item.status==='bought');return `<div class="section-title"><h2>采购清单</h2><span class="meta">待买 ${pending.length} 项</span></div><section class="card">${pending.length?pending.map(shoppingRow).join(''):`<div class="empty"><span class="empty-icon">🧺</span><b>待买清单是空的</b><span>从菜谱导入缺料，或手动新增食材。</span></div>`}<div class="bottom-action"><button class="secondary-button" data-action="add-shopping">＋ 新增食材</button>${bought.length?'<button class="primary-button" data-action="sync-shopping">一键同步入库</button>':'<button class="secondary-button" data-tab-go="recipes">去菜谱补货</button>'}</div></section>`;}
 function inventory(){
   if(inventoryEntryView==='manual')return manualInventoryEntry();
@@ -404,7 +432,7 @@ function consumptionReviewModal(){const cooks=(state.history||[]).filter(h=>h.ty
 function reminderSettingsModal(){const p=state.preferences;const row=(key,title,detail)=>'<div class="reminder-setting-row"><div><strong>'+title+'</strong><p>'+detail+'</p></div><input class="switch" aria-label="'+title+'" type="checkbox" '+(p[key]?'checked':'')+' data-action="toggle-reminder-setting" data-key="'+key+'"></div>';modal('<h2>提醒设置</h2><div class="reminder-settings-list">'+row('lowStockReminder','库存不足提醒','常用食材不足时，提醒你补货')+row('dailyMealReminder','今日做饭提醒','在设定的用餐时间提醒你查看库存')+row('reminder','临期食材提醒','优先提醒即将到期的食材')+'</div><div class="modal-actions"><button type="button" class="primary-button" data-action="close-modal">完成</button></div>');}
 function privacyDataModal(){modal('<h2>隐私与数据管理</h2><p class="meta privacy-copy">你的偏好、库存和烹饪记录仅用于生成个性化的厨房建议。当前版本不提供家庭共享功能。</p><div class="modal-actions"><button type="button" class="primary-button" data-action="close-modal">知道了</button></div>');}
 function cookingModal(recipe){const rows=recipe.ingredients.filter(i=>i.available&&i.inventoryId).map(i=>`<label>${esc(i.name)}（${esc(i.unit)}）<input type="number" data-consume="${esc(i.inventoryId)}" data-name="${esc(i.name)}" step="0.1" min="0" value="${esc(i.quantity)}"></label>`).join('');modal(`<h2>确认实际消耗</h2><p class="meta">确认后将扣减冰箱库存，并记录本次烹饪。</p><form id="cook-form" data-recipe="${esc(recipe.id)}">${rows||'<p class="meta">这道菜没有可匹配的库存食材。</p>'}<div class="modal-actions"><button type="button" class="secondary-button" data-action="close-modal">取消</button><button class="primary-button" type="submit">确认完成</button></div></form>`);}
-async function ask(question){agentLoading=true;render();try{const result=await api('/api/agent',{method:'POST',body:JSON.stringify({question})});agentResult=result;state.recipes=[...(result.recipes||[]),...(state.recipes||[]).filter(old=>!(result.recipes||[]).some(next=>next.id===old.id))];await persist();toast('厨房管家的建议已生成');}catch(error){toast(error.message)}finally{agentLoading=false;render();}}
+async function ask(question){agentLoading=true;render();try{const result=await api('/api/agent',{method:'POST',body:JSON.stringify({question,recipeCatalog:(typeof recipeLibrary==='undefined'?[]:recipeLibrary).map(recipe=>({id:recipe.id,title:recipe.title,ingredients:(recipe.ingredients||[]).map(item=>item.name)}))})});agentResult=result;state.recipes=[...(result.recipes||[]),...(state.recipes||[]).filter(old=>!(result.recipes||[]).some(next=>next.id===old.id))];await persist();toast('厨房管家的建议已生成');}catch(error){toast(error.message)}finally{agentLoading=false;render();}}
 async function identifyPhotoInventory(button){if(!photoPreviewUrl)return;button.disabled=true;button.textContent='AI识别中…';try{const result=await api('/api/photo-inventory',{method:'POST',body:JSON.stringify({image:photoPreviewUrl})});aiEntryDestination='inventory';aiInventoryReviewModal(reconcileAiItems(result.items));}catch(error){toast(error.message);button.disabled=false;button.textContent='AI识别食材';}}
 function stopCamera(){if(cameraStream){cameraStream.getTracks().forEach(track=>track.stop());cameraStream=null;}}
 async function startCamera(button){if(!navigator.mediaDevices?.getUserMedia){toast('当前浏览器不支持摄像头访问');return;}button.disabled=true;button.textContent='正在申请权限…';try{stopCamera();cameraStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});const video=document.getElementById('camera-preview'),stage=document.getElementById('camera-stage');video.srcObject=cameraStream;stage.classList.add('active');stage.querySelector('[data-action="capture-camera"]').hidden=false;button.textContent='摄像头已开启';}catch(error){button.disabled=false;button.textContent='📷 打开摄像头';toast(error.name==='NotAllowedError'?'摄像头权限被拒绝，请在浏览器设置中允许':'无法打开摄像头，请检查设备');}}
