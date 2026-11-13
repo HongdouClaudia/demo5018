@@ -171,7 +171,53 @@ function recipeImage(recipe){
 }
 function recipeCard(recipe){const image=recipeImage(recipe);return `<button class="recipe-card" data-action="open-recipe" data-id="${esc(recipe.id)}"><div class="recipe-visual">${image?`<img class="recipe-image" src="${image}" alt="${esc(recipe.title)}" loading="lazy">`:`<span class="recipe-emoji">${esc(recipe.imageEmoji||'🍲')}</span>`}<span class="recipe-visual-label">按库存推荐</span></div><div class="recipe-body"><h3>${esc(recipe.title)}</h3><div class="meta"><span>${esc(recipe.duration||30)} 分钟</span><span>·</span><span>${esc(recipe.difficulty||'简单')}</span><span>·</span><span>${esc(recipe.servings||2)} 人</span></div>${tags(recipe.tags||[])}</div></button>`;}
 function inventoryBalance(inventory){let included=0;const countedItems=new Set();const groups=Object.fromEntries(nutritionGroups.map(group=>[group,{servings:0,foods:new Set(),items:[]} ]));for(const item of inventory){const profile=resolveFoodProfile(item.name);if(!profile)continue;const amount=Number(item.quantity);const rawUnit=String(item.unit||'').trim();const unit=({'克':'g','千克':'kg','毫升':'ml','升':'l'})[rawUnit]||rawUnit;if(!(amount>0))continue;const servings=profile.per?.[unit]?amount/profile.per[unit]:profile.count?.[unit]?amount*profile.count[unit]:0;if(!servings)continue;included++;countedItems.add(item);groups[profile.group].servings+=servings;groups[profile.group].foods.add(item.name);groups[profile.group].items.push({...item,estimatedServings:servings});}const confidence=inventory.length?included/inventory.length:0;const uncounted=inventory.filter(item=>!countedItems.has(item));if(!included||confidence<.6)return {score:null,confidence,included,total:inventory.length,groups,uncounted};const coverage=nutritionGroups.reduce((sum,g)=>sum+(groups[g].servings>0?10:0),0);const portions=nutritionGroups.reduce((sum,g)=>sum+6*Math.min(groups[g].servings/3,1),0);const variety=4*Math.min(new Set(nutritionGroups.flatMap(g=>[...groups[g].foods])).size,5);return {score:Math.min(100,Math.round(coverage+portions+variety)),confidence,included,total:inventory.length,groups,uncounted};}
-function nutritionBreakdown(balance){return `<div class="nutrition-breakdown">${nutritionGroups.filter(group=>balance.groups[group].items.length).map(group=>{const item=[...balance.groups[group].items].sort((a,b)=>b.estimatedServings-a.estimatedServings)[0];return `<button class="nutrition-category" data-tab-go="inventory"><strong>${group}</strong><span>${foodIcon(item.name)} ${esc(item.name)} · ${esc(item.quantity)} ${esc(item.unit)}</span><b>›</b></button>`;}).join('')}</div>`;}
+const nutritionColors=['#e8755b','#78a2d9','#8dbf79','#f2c864','#af91c6'];
+function estimatedPortions(item, quantity=Number(item.quantity)){
+  const profile=resolveFoodProfile(item.name);
+  if(!profile||!Number.isFinite(quantity)||quantity<=0)return null;
+  const raw=String(item.unit||'').trim();
+  const unit=({'克':'g','千克':'kg','毫升':'ml','升':'l'})[raw]||raw;
+  const servings=profile.per?.[unit]?quantity/profile.per[unit]:profile.count?.[unit]?quantity*profile.count[unit]:0;
+  return servings>0?{group:profile.group,servings}:null;
+}
+function todayRecordedPortions(){
+  const amounts=Object.fromEntries(nutritionGroups.map(group=>[group,0]));
+  let recognized=0;
+  for(const operation of state.cookOperations||[]){
+    if(operation.undone||String(operation.createdAt||'').slice(0,10)!==today)continue;
+    for(const line of operation.consumption||[]){
+      const snapshot=line.item;
+      if(!snapshot)continue;
+      const portion=estimatedPortions(snapshot,Number(line.quantity));
+      if(!portion)continue;
+      amounts[portion.group]+=portion.servings;
+      recognized++;
+    }
+  }
+  return {amounts,recognized};
+}
+function nutritionBreakdown(balance){
+  const total=nutritionGroups.reduce((sum,group)=>sum+balance.groups[group].servings,0);
+  const recorded=todayRecordedPortions();
+  let position=0;
+  const arcs=nutritionGroups.map((group,index)=>{
+    const share=total>0?balance.groups[group].servings/total*100:0;
+    const start=position;position+=share;
+    return share>0?`${nutritionColors[index]} ${start.toFixed(2)}% ${position.toFixed(2)}%`:null;
+  }).filter(Boolean);
+  const chart=arcs.length?`conic-gradient(${arcs.join(',')})`:'#eee9e4';
+  const legend=nutritionGroups.map((group,index)=>{
+    const share=total>0?Math.round(balance.groups[group].servings/total*100):0;
+    return `<div class="nutrition-legend-item"><i style="background:${nutritionColors[index]}"></i><span>${group}</span><b>${share}%</b></div>`;
+  }).join('');
+  const rows=nutritionGroups.map((group,index)=>{
+    const amount=recorded.amounts[group];
+    const progress=Math.min(100,amount/3*100);
+    const label=recorded.recognized?`${Number(amount.toFixed(1))} / 3 份`:'暂无数据';
+    return `<div class="nutrition-progress-item"><div><i style="background:${nutritionColors[index]}"></i><span>${group}</span><b>${label}</b></div><span class="nutrition-progress-track"><span style="width:${progress.toFixed(1)}%;background:${nutritionColors[index]}"></span></span></div>`;
+  }).join('');
+  return `<div class="nutrition-breakdown"><div class="nutrition-share"><strong>库存类别占比</strong><div class="nutrition-donut" style="background:${chart}" role="img" aria-label="当前库存各类别估算份数占比"><span>库存<br>构成</span></div><div class="nutrition-legend">${legend}</div></div><div class="nutrition-intake"><strong>今日已记录消耗</strong><p>与每类 3 份参考目标比较</p>${rows}</div></div><p class="nutrition-chart-note">按现有库存估算占比；进度仅统计今日已确认的烹饪扣库，不代表实际摄入量。</p>`;
+}
 function nutritionHealthCard(balance) {
   const available = balance.score !== null;
   return `<section class="card health-card">
@@ -189,7 +235,7 @@ function renderHome(){
   const tip=nutritionRecommendation(balance,pending);
   const nearestExpiring=[...expiring].sort((a,b)=>inventoryAgeDays(b)-inventoryAgeDays(a)).slice(0,2);
   const expiryRows=nearestExpiring.map(item=>`<span class="expiry-item"><strong>${esc(item.name)}</strong><small>${esc(freshnessFor(item).label)}</small></span>`).join('');
-  return `<div class="home-page"><div class="home-shortcuts"><button class="home-shortcut expiry-shortcut" data-tab-go="inventory"><span class="shortcut-icon">◷</span><span><strong>需优先处理 · ${expiring.length}</strong>${expiring.length?`<span class="expiry-preview">${expiryRows||'<small>查看库存记录</small>'}</span>`:'<small>暂时没有需优先处理的食材</small>'}</span><b>›</b></button><button class="home-shortcut shopping-shortcut" data-tab-go="shopping"><span class="shortcut-icon">🧺</span><span><strong>采购清单</strong><small>${pending.length?`还有 ${pending.length} 项待买`:'清单目前为空'}</small></span><b>›</b></button></div>
+  return `<div class="home-page"><div class="home-shortcuts"><button class="home-shortcut expiry-shortcut" data-tab-go="inventory"><span class="shortcut-icon">◷</span><span><strong>需优先处理</strong>${expiring.length?`<span class="expiry-preview">${expiryRows||'<small>查看库存记录</small>'}</span>`:'<small>暂时没有需优先处理的食材</small>'}</span><b>›</b></button><button class="home-shortcut shopping-shortcut" data-tab-go="shopping"><span class="shortcut-icon">🧺</span><span><strong>采购清单</strong><small>${pending.length?`还有 ${pending.length} 项待买`:'清单目前为空'}</small></span><b>›</b></button></div>
   ${nutritionHealthCard(balance)}
   <div class="section-title"><h2>每日推荐</h2><button data-tab-go="recipes">查看全部</button></div>
   ${recipes.length?`<div class="recipe-scroll">${recipes.slice(0,3).map(recipeCard).join('')}</div>`:'<section class="card empty daily-empty"><span class="empty-icon">🍳</span><b>今天吃点什么？</b><span>根据现有食材生成每日菜品推荐。</span><button class="secondary-button" data-action="quick-ask" data-question="根据我的库存推荐今天的菜">问问厨房管家</button></section>'}
