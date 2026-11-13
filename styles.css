@@ -63,7 +63,7 @@
 .home-page .expiry-item{display:flex;justify-content:space-between;gap:4px;min-width:0;font-size:9px;line-height:1.35}
 .home-page .expiry-item strong{font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .home-page .expiry-item small{font-size:9px;white-space:nowrap;flex:none}
-.home-page .diet-tip-text{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;margin:0}
+.home-page .diet-tip-text{display:block;overflow:visible;white-space:normal;margin:0}
 .home-page .diet-tip-note{margin:7px 0 0}
 .home-page .recipe-visual{height:116px!important;position:relative;overflow:hidden;background:radial-gradient(circle at 50% 48%,#fff8eb 0 29%,transparent 30%),linear-gradient(135deg,#ffe1c8,#f5a27f)!important}
 .home-page .recipe-visual:before{content:"";position:absolute;width:118px;height:118px;border-radius:50%;background:rgba(255,255,255,.28);right:-38px;top:-53px}
@@ -159,10 +159,9 @@
 .daily-review-modal-summary b{display:block;color:var(--ink);font-size:22px}
 .daily-review-modal-summary span{color:var(--sub);font-size:10px}
 .daily-review-modal-copy{margin:0 0 15px;padding:13px 14px;border-radius:13px;background:#fff8f1;color:var(--ink);font-size:13px;line-height:1.7}
-.daily-review-detail{display:grid;gap:10px;margin-bottom:14px}
-.daily-review-detail-row>div{display:flex;align-items:center;gap:7px;margin-bottom:5px}
+.daily-review-detail{display:grid;margin-bottom:14px;border:1px solid var(--line);border-radius:13px;overflow:hidden}
+.daily-review-detail-row{display:flex;align-items:center;gap:8px;padding:11px 12px;border-bottom:1px solid var(--line);background:#fff}
+.daily-review-detail-row:last-child{border-bottom:0}
 .daily-review-detail-row i{width:8px;height:8px;border-radius:50%;flex:none}
-.daily-review-detail-row span{flex:1;color:var(--sub);font-size:12px}
-.daily-review-detail-row b{font-size:11px}
-.daily-review-detail-row>span{display:block;height:6px;overflow:hidden;border-radius:999px;background:#eee9e4}
-.daily-review-detail-row>span>span{display:block;height:100%;border-radius:inherit}
+.daily-review-detail-row span{flex:1;color:var(--ink);font-size:12px}
+.daily-review-detail-row b{color:var(--sub);font-size:11px;font-weight:600}
