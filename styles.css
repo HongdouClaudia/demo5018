@@ -127,3 +127,16 @@
 .home-page .agent-advice{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;line-height:1.5;margin-bottom:6px}
 .home-page .agent-result>.section-title{margin-top:12px}
 .home-page .agent-empty-recipes{font-size:12px;line-height:1.5;color:var(--sub);margin:4px 0 0}
+
+/* Homepage recommendation purchase review */
+.home-page .agent-result .recipe-scroll{display:flex;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x proximity;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
+.home-page .agent-result .recipe-card{scroll-snap-align:start}
+.home-recommendation-next{display:flex;flex-direction:column;gap:8px}
+.home-recommendation-next .secondary-button{width:100%}
+.recommendation-shopping-modal>.meta{margin:-8px 0 12px}
+.recommendation-shopping-list{display:grid;gap:10px;max-height:55vh;overflow-y:auto;padding-right:2px}
+.recommendation-shopping-item{padding:12px;background:#fff;border:1px solid var(--line);border-radius:14px}
+.recommendation-shopping-item>strong{font-size:13px;color:var(--brand)}
+.recommendation-shopping-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.recommendation-shopping-item>.meta{font-size:11px;margin:7px 0 0}
+.recommendation-shopping-modal .modal-actions{position:sticky;bottom:-19px;background:#fffaf5;padding:12px 0 19px;margin-top:8px}
