@@ -91,6 +91,7 @@
       leave(destination);
     } else if (target.dataset.action === 'open-recipe') {
       event.preventDefault(); event.stopImmediatePropagation();
+      if (currentTab === 'home') returnTab = 'home';
       pendingDetail = target.dataset.id;
       if (!modalLayer.hidden) closeModal();
       currentTab = 'recipes';
