@@ -141,9 +141,7 @@ def ask_deepseek(question, state, recipe_catalog = [])
     【最高优先级安全规则】用户的“过敏提示”和“忌口”是硬性排除条件，优先级高于临期食材、库存利用和口味偏好。不得在菜名、食材、替代方案、步骤或补购清单中出现这些食材；无法满足时宁可不推荐菜谱并说明原因。只有通过该筛选后，才优先使用临期食材和现有库存。
     只返回 JSON，不能输出 Markdown。必须遵守以下结构：
     {
-      "summary":"一句话建议",
-      "insight":"简短库存或饮食总结",
-      "health_note":"大致热量或蛋白质等估算提示，必须包含‘仅供参考’",
+      "summary":"推荐做什么及原因，最多两句",
       "alerts":[{"name":"食材名","message":"预警说明","urgency":"high|medium"}],
       "recipes":[{
         "id":"唯一英文或数字 id",
@@ -161,7 +159,9 @@ def ask_deepseek(question, state, recipe_catalog = [])
       }],
       "shopping":[{"name":"缺少食材","quantity":1,"unit":"个|g|盒","category":"蔬果|肉禽|水产|调味品|其他","source":"菜名"}]
     }
-    只输出完整有效的 JSON 对象；若用户只要一道菜，recipes 只返回一条。recipes 最多返回 3 条。优先从 recipe_catalog 中挑选符合问题、库存和饮食限制的菜，选中时使用对应 id 和 title；库里没有合适的菜时可以另荐新菜，但不得假称已录入菜谱。只有库存不足时才在 shopping 中列出缺料。若没有适合菜谱，recipes 可以为空，但仍要给出可执行建议。
+    只输出完整有效的 JSON 对象。summary 只说推荐做什么、为什么，控制在两句内，不盘点库存、不列库存数量、不重复预警内容；每道菜的 reason 也只写一句选择理由，不盘点库存。
+    若用户只要一道菜，recipes 只返回一条；最多返回 3 条。对于“今天吃什么”等普通做饭问题，优先从 recipe_catalog 中选择常见、做法合理的家常菜，选中时使用对应 id 和 title。不要把库存食材机械拼接成新菜名，不推荐缺乏常见做法的奇怪组合；用户明确指定库外菜品时可推荐真实常见菜。
+    有安全且符合忌口的菜时请至少推荐一道；必要的缺料放入 shopping。若确实没有适合菜谱，recipes 可以为空，但 summary 要简短说明原因。
   PROMPT
 
   uri = URI('https://api.deepseek.com/chat/completions')
