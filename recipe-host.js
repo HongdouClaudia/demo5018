@@ -92,6 +92,7 @@
     } else if (target.dataset.action === 'open-recipe') {
       event.preventDefault(); event.stopImmediatePropagation();
       pendingDetail = target.dataset.id;
+      if (!modalLayer.hidden) closeModal();
       currentTab = 'recipes';
       render();
     }
