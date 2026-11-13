@@ -108,7 +108,7 @@ def enforce_food_restrictions(result, preferences)
   result
 end
 
-def ask_deepseek(question, state)
+def ask_deepseek(question, state, recipe_catalog = [])
   api_key = ENV['DEEPSEEK_API_KEY']
   raise '未找到 DEEPSEEK_API_KEY，请先在 .env 中配置有效密钥。' if api_key.to_s.empty?
 
@@ -118,8 +118,12 @@ def ask_deepseek(question, state)
       freshness: item['freshness'], expiryDate: item['expiryDate']
     }
   end
+  catalog = Array(recipe_catalog).select { |item| item.is_a?(Hash) && !item['id'].to_s.empty? && !item['title'].to_s.empty? }.take(30).map do |item|
+    { id: item['id'].to_s[0, 80], title: item['title'].to_s[0, 80], ingredients: Array(item['ingredients']).map { |name| name.to_s[0, 50] }.take(12) }
+  end
   context = {
     user_question: question,
+    recipe_catalog: catalog,
     preferences: state.fetch('preferences', {}),
     hard_constraints: { priority: '过敏提示和忌口 > 临期食材 > 现有库存 > 口味偏好', excluded_foods: restricted_foods(state.fetch('preferences', {})) },
     inventory: inventory_context,
@@ -151,7 +155,7 @@ def ask_deepseek(question, state)
       }],
       "shopping":[{"name":"缺少食材","quantity":1,"unit":"个|g|盒","category":"蔬果|肉禽|水产|调味品|其他","source":"菜名"}]
     }
-    recipes 最多返回 3 条。只有库存不足时才在 shopping 中列出缺料。若没有适合菜谱，recipes 可以为空，但仍要给出可执行建议。
+    recipes 最多返回 3 条。优先从 recipe_catalog 中挑选符合问题、库存和饮食限制的菜，选中时使用对应 id 和 title；库里没有合适的菜时可以另荐新菜，但不得假称已录入菜谱。只有库存不足时才在 shopping 中列出缺料。若没有适合菜谱，recipes 可以为空，但仍要给出可执行建议。
   PROMPT
 
   uri = URI('https://api.deepseek.com/chat/completions')
@@ -686,7 +690,7 @@ server.mount_proc '/' do |req, res|
       body = request_json(req)
       question = body && body['question'].to_s.strip
       raise '请输入想让厨房管家处理的任务。' if question.empty?
-      json_response(res, 200, ask_deepseek(question, read_state))
+      json_response(res, 200, ask_deepseek(question, read_state, body['recipeCatalog']))
       next
     end
 
