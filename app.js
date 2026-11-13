@@ -306,12 +306,50 @@ function nutritionRecommendation(balance,shopping=[]){
   const main=variants[seed%variants.length];
   return {text:expiryLead?`${main} ${expiryLead}`:main};
 }
+function dailyDietReview(){
+  const totals=Object.fromEntries(nutritionGroups.map(group=>[group,0]));
+  const operations=(state.cookOperations||[]).filter(operation=>!operation.undone&&String(operation.createdAt||'').slice(0,10)===today);
+  let recognized=0;
+  operations.forEach(operation=>{
+    (operation.consumption||[]).forEach(line=>{
+      if(!line.item)return;
+      const portion=estimatedPortions(line.item,Number(line.quantity));
+      if(!portion)return;
+      totals[portion.group]+=portion.servings;
+      recognized++;
+    });
+  });
+  const activeGroups=nutritionGroups.filter(group=>totals[group]>0);
+  const ranked=[...activeGroups].sort((a,b)=>totals[b]-totals[a]);
+  const labels={'谷薯主食':'主食类','蔬菜':'蔬菜类','水果':'水果类','蛋白质':'蛋白质类','奶类':'奶类'};
+  let summary='今天还没有烹饪记录。完成做饭并确认用量后，我会在这里帮你做当天复盘。';
+  if(operations.length){
+    const main=ranked.slice(0,2).map(group=>labels[group]).join('和');
+    const missing=nutritionGroups.filter(group=>totals[group]===0);
+    if(!recognized)summary=`今天记录了 ${operations.length} 次烹饪，不过还缺少实际用量，确认消耗后就能生成更完整的复盘。`;
+    else if(missing.length)summary=`今天记录了 ${operations.length} 次烹饪，主要包含${main||'多类食材'}。下一餐可以适当搭配${labels[missing[0]]}，吃得更丰富些呀！`;
+    else summary=`今天记录了 ${operations.length} 次烹饪，五类食材都有出现，整体搭配很丰富，继续保持呀！`;
+  }
+  return {operations,totals,activeGroups,recognized,summary};
+}
+function dailyDietReviewModal(){
+  const review=dailyDietReview();
+  const max=Math.max(1,...Object.values(review.totals));
+  const rows=nutritionGroups.map((group,index)=>{
+    const value=review.totals[group];
+    const width=Math.min(100,value/max*100);
+    const label=value?Number(value.toFixed(1))+' 份':'暂无记录';
+    return `<div class="daily-review-detail-row"><div><i style="background:${nutritionColors[index]}"></i><span>${group}</span><b>${label}</b></div><span><span style="width:${width.toFixed(1)}%;background:${nutritionColors[index]}"></span></span></div>`;
+  }).join('');
+  modal(`<h2>今日饮食复盘</h2><div class="daily-review-modal-summary"><div><b>${review.operations.length}</b><span>次烹饪</span></div><div><b>${review.activeGroups.length}</b><span>类食材</span></div><div><b>${review.recognized}</b><span>项消耗记录</span></div></div><p class="daily-review-modal-copy">${review.summary}</p><div class="daily-review-detail">${rows}</div><p class="form-hint">仅统计今天已确认的烹饪扣库记录，不代表实际营养摄入，仅供参考。</p><div class="modal-actions"><button type="button" class="primary-button" data-action="close-modal">知道了</button></div>`);
+}
 function renderHome(){
   const expiring=state.inventory.filter(item=>freshnessFor(item).key==='soon');
   const pending=state.shopping.filter(item=>item.status==='pending');
   const recipes=agentResult?.recipes||state.recipes||[];
   const balance=inventoryBalance(state.inventory);
   const tip=nutritionRecommendation(balance,pending);
+  const review=dailyDietReview();
   const nearestExpiring=[...expiring].sort((a,b)=>inventoryAgeDays(b)-inventoryAgeDays(a)).slice(0,2);
   const expiryRows=nearestExpiring.map(item=>`<span class="expiry-item"><strong>${esc(item.name)}</strong><small>${esc(freshnessFor(item).label)}</small></span>`).join('');
   return `<div class="home-page"><div class="home-shortcuts"><button class="home-shortcut expiry-shortcut" data-tab-go="inventory"><span class="shortcut-icon">◷</span><span><strong>需优先处理</strong>${expiring.length?`<span class="expiry-preview">${expiryRows||'<small>查看库存记录</small>'}</span>`:'<small>暂时没有需优先处理的食材</small>'}</span><b>›</b></button><button class="home-shortcut shopping-shortcut" data-tab-go="shopping"><span class="shortcut-icon">🧺</span><span><strong>采购清单</strong><small>${pending.length?`还有 ${pending.length} 项待买`:'清单目前为空'}</small></span><b>›</b></button></div>
@@ -321,9 +359,10 @@ function renderHome(){
   <section class="card agent-card"><div class="agent-intro"><div class="agent-avatar">✦</div><div><strong>问问厨房管家</strong><p>我会优先为你消耗现有和临期食材</p></div></div><form class="ask-row" id="ask-form"><input id="agent-question" required placeholder="例如：30 分钟做两人晚餐" /><button type="submit">提问</button></form><div class="quick-chips">${['优先用掉快过期食材','30 分钟做两人晚餐','看看我还缺什么'].map((q,i)=>`<button class="chip" data-action="quick-ask" data-quick-mode="${['expiry','dinner','shopping'][i]}" data-question="${q}">${q}</button>`).join('')}</div></section>
   ${agentLoading?'<section class="card loading"><span class="spinner"></span>厨房管家正在分析你的库存与偏好…</section>':''}
   ${agentResult?agentPanel(agentResult):''}
-  <div class="section-title"><h2>饮食小提示</h2></div><section class="card diet-tip-card"><p class="result-summary diet-tip-text">${tip.text}</p><p class="meta diet-tip-note">按库存整理，仅供参考</p><button class="tip-shopping-button" data-tab-go="shopping">进入采购</button></section></div>`;
+  <div class="section-title"><h2>饮食小提示</h2></div><section class="card diet-tip-card"><p class="result-summary diet-tip-text">${tip.text}</p><p class="meta diet-tip-note">按库存整理，仅供参考</p><button class="tip-shopping-button" data-tab-go="shopping">进入采购</button></section>
+  <div class="section-title daily-review-title"><h2>今日饮食复盘</h2><span class="meta">今天</span></div><section class="card daily-review-card"><div class="daily-review-heading"><span class="daily-review-icon">↗</span><p>${review.summary}</p></div>${review.operations.length?`<div class="daily-review-stats"><span><b>${review.operations.length}</b> 次烹饪</span><span><b>${review.activeGroups.length}</b> 类食材</span><span><b>${review.recognized}</b> 项记录</span></div>`:''}<button class="daily-review-action" data-action="open-daily-review">查看今日详情 <b>›</b></button><p class="meta daily-review-note">仅基于今天已确认的烹饪记录，仅供参考</p></section></div>`;
 }
-return {render:renderHome,recipeImage};
+return {render:renderHome,recipeImage,openDailyReview:dailyDietReviewModal};
 })();
 // END HOMEPAGE-ONLY MODULE
 
@@ -611,6 +650,7 @@ function captureCamera(){const video=document.getElementById('camera-preview');i
 async function importShopping(items){if(!items?.length){toast('当前没有需要补购的食材');return;}items.forEach(item=>state.shopping.push({id:`shop-${Date.now()}-${Math.random().toString(16).slice(2)}`,name:item.name,quantity:item.quantity,unit:item.unit,category:item.category||'其他',source:`菜谱导入 · ${item.source||selectedRecipe?.title||'智能推荐'}`,status:'pending',completedAt:''}));await persist();toast('已加入采购清单');}
 
 document.addEventListener('click',async event=>{const target=event.target.closest('[data-action],[data-tab],[data-tab-go]');if(!target)return;if(target.dataset.tab){currentTab=target.dataset.tab;selectedRecipe=null;returnTab=null;inventoryEntryView=null;photoPreviewUrl='';if(currentTab!=='inventory'){inventoryManageMode=false;selectedInventoryIds.clear();}render();return;}if(target.dataset.tabGo){currentTab=target.dataset.tabGo;selectedRecipe=null;returnTab=target.dataset.returnTab||null;inventoryEntryView=null;photoPreviewUrl='';if(currentTab!=='inventory'){inventoryManageMode=false;selectedInventoryIds.clear();}render();return;}const action=target.dataset.action;
+  if(action==='open-daily-review'){homepage.openDailyReview();return;}
   if(action==='open-ai-entry'){aiEntryDestination=inventoryEntryView==='manual'?'cart':'inventory';aiInventoryModal();return;}
   if(action==='open-manual-entry'){closeModal();inventoryEntryView='manual';manualEntryCategory='蔬菜';manualEntrySearch='';manualCartExpanded=false;render();return;}
   if(action==='complete-manual-entry'){if(!manualEntryCart.length)return;const count=manualEntryCart.length;manualEntryCart.forEach(item=>state.inventory.push({id:`inv-${Date.now()}-${Math.random().toString(16).slice(2)}`,name:item.name,quantity:Number(item.quantity),unit:item.unit,estimatedGrams:Number(item.estimatedGrams)||null,location:item.location,purchaseDate:item.purchaseDate||today,createdAt:item.createdAt||today,freshness:item.freshness||'新鲜',aiFreshness:item.freshness||null}));await persist();manualEntryCart=[];manualCartExpanded=false;inventoryEntryView=null;inventoryCategory='全部';render();toast(`已录入 ${count} 种食材`);return;}
