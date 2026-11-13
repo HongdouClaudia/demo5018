@@ -170,7 +170,7 @@ def ask_deepseek(question, state, recipe_catalog = [])
   request.body = JSON.generate(
     model: ENV.fetch('DEEPSEEK_MODEL', 'deepseek-chat'),
     temperature: 0.4,
-    max_tokens: 2200,
+    max_tokens: 4000,
     response_format: { type: 'json_object' },
     messages: [
       { role: 'system', content: system_prompt },
