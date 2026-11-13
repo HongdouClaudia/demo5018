@@ -301,8 +301,8 @@ function recommendationPreview(recipe){
 function agentPanel(result){
   const suggestions=Array.isArray(result.recipes)?result.recipes:[];
   const first=suggestions[0];
-  const reason=String(first?.reason||'').trim().split(/[。！？]/)[0].slice(0,42);
-  const advice=first?'推荐做'+first.title+'，'+(reason||'用现有食材做一顿家常饭')+'。':(result.summary||'这次还没找到合适的做法，可以换个口味再试试。');
+  const second=suggestions[1];
+  const advice=first?(second?'今天可以做'+first.title+'，也可以试试'+second.title+'！都是常见家常菜，做起来不复杂。':'今天推荐'+first.title+'！这道菜做法家常，适合在家做。'):'这次还没找到合适的做法，可以换个口味再试试。';
   const recommendations=suggestions.length?'<div class="recipe-scroll">'+suggestions.map(recommendationCard).join('')+'</div>':'<p class="agent-empty-recipes">这次暂时没有合适的菜谱，换个做法再问问我吧。</p>';
   const alerts=result.alerts?.length?'<div class="section-title"><h2>预警</h2><button data-tab-go="inventory">去处理</button></div>'+result.alerts.map(a=>'<div class="alert-row"><span class="alert-dot"></span><div><strong>'+esc(a.name)+'</strong><p>'+esc(a.message)+'</p></div></div>').join(''):'';
   const shopping=result.shopping?.length?'<div class="section-title"><h2>建议补购</h2><button data-action="import-shopping">加入采购清单</button></div>'+result.shopping.map(i=>'<div class="alert-row"><span>＋</span><div><strong>'+esc(i.name)+' '+esc(i.quantity)+esc(i.unit)+'</strong><p>用于 '+esc(i.source||'推荐菜谱')+'</p></div></div>').join(''):'';
