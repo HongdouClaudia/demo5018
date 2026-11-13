@@ -130,7 +130,7 @@
 
 /* Homepage recommendation purchase review */
 .home-page .agent-result .recipe-scroll{display:flex;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x proximity;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
-.home-page .agent-result .recipe-card{scroll-snap-align:start}
+.home-page .agent-result .recipe-card{flex:0 0 min(68%,250px);width:min(68%,250px);scroll-snap-align:start}
 .home-recommendation-next{display:flex;flex-direction:column;gap:8px}
 .home-recommendation-next .secondary-button{width:100%}
 .recommendation-shopping-modal>.meta{margin:-8px 0 12px}
