@@ -140,3 +140,29 @@
 .recommendation-shopping-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .recommendation-shopping-item>.meta{font-size:11px;margin:7px 0 0}
 .recommendation-shopping-modal .modal-actions{position:sticky;bottom:-19px;background:#fffaf5;padding:12px 0 19px;margin-top:8px}
+
+
+/* 首页：今日饮食复盘 */
+.home-page .daily-review-title{margin-top:18px}
+.home-page .daily-review-card{padding:16px;background:linear-gradient(145deg,#fff 0%,#fffaf4 100%)}
+.home-page .daily-review-heading{display:flex;align-items:flex-start;gap:11px}
+.home-page .daily-review-icon{width:34px;height:34px;display:grid;place-items:center;flex:none;border-radius:11px;background:var(--yellow-soft);color:#c8892d;font-size:18px;font-weight:700}
+.home-page .daily-review-heading p{margin:1px 0 0;color:var(--ink);font-size:14px;line-height:1.7}
+.home-page .daily-review-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:13px 0 4px}
+.home-page .daily-review-stats span{padding:9px 5px;border-radius:11px;background:#f7f3ee;color:var(--sub);font-size:10px;text-align:center;white-space:nowrap}
+.home-page .daily-review-stats b{display:block;margin-bottom:2px;color:var(--ink);font-size:17px}
+.home-page .daily-review-action{width:100%;display:flex;align-items:center;justify-content:center;gap:6px;margin-top:12px;padding:11px;border:0;border-radius:12px;background:#fff0e8;color:var(--brand);font-weight:700}
+.home-page .daily-review-action b{font-size:18px;line-height:1}
+.home-page .daily-review-note{display:block;margin:9px 0 0;text-align:center;font-size:10px}
+.daily-review-modal-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:4px 0 14px}
+.daily-review-modal-summary>div{padding:12px 5px;border-radius:12px;background:#f7f3ee;text-align:center}
+.daily-review-modal-summary b{display:block;color:var(--ink);font-size:22px}
+.daily-review-modal-summary span{color:var(--sub);font-size:10px}
+.daily-review-modal-copy{margin:0 0 15px;padding:13px 14px;border-radius:13px;background:#fff8f1;color:var(--ink);font-size:13px;line-height:1.7}
+.daily-review-detail{display:grid;gap:10px;margin-bottom:14px}
+.daily-review-detail-row>div{display:flex;align-items:center;gap:7px;margin-bottom:5px}
+.daily-review-detail-row i{width:8px;height:8px;border-radius:50%;flex:none}
+.daily-review-detail-row span{flex:1;color:var(--sub);font-size:12px}
+.daily-review-detail-row b{font-size:11px}
+.daily-review-detail-row>span{display:block;height:6px;overflow:hidden;border-radius:999px;background:#eee9e4}
+.daily-review-detail-row>span>span{display:block;height:100%;border-radius:inherit}
