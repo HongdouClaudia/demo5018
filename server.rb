@@ -108,18 +108,33 @@ def enforce_food_restrictions(result, preferences)
   result
 end
 
-def ask_deepseek(question, state)
+def ask_deepseek(question, state, recipe_catalog = [], quick_mode = nil, avoid_titles = [])
   api_key = ENV['DEEPSEEK_API_KEY']
   raise '未找到 DEEPSEEK_API_KEY，请先在 .env 中配置有效密钥。' if api_key.to_s.empty?
 
+  quick_mode = %w[expiry dinner shopping].include?(quick_mode.to_s) ? quick_mode.to_s : ''
+  today = Time.now.strftime('%Y-%m-%d')
   inventory_context = state.fetch('inventory', []).map do |item|
     {
       id: item['id'], name: item['name'], quantity: item['quantity'], unit: item['unit'], location: item['location'],
-      freshness: item['freshness'], expiryDate: item['expiryDate']
+      freshness: item['freshness'], expiryDate: item['expiryDate'], expired: !item['expiryDate'].to_s.empty? && item['expiryDate'] < today
     }
   end
+  catalog = Array(recipe_catalog).select { |item| item.is_a?(Hash) && !item['id'].to_s.empty? && !item['title'].to_s.empty? }.take(30).map do |item|
+    { id: item['id'].to_s[0, 80], title: item['title'].to_s[0, 80], duration: item['duration'].to_i, mealTypes: Array(item['mealTypes']).map(&:to_s).take(5), ingredients: Array(item['ingredients']).map { |name| name.to_s[0, 50] }.take(12) }
+  end
+  inventory_names = inventory_context.map { |item| item[:name].to_s }
+  catalog = catalog.sort_by do |item|
+    overlap = item[:ingredients].count { |name| inventory_names.any? { |have| have == name || have.include?(name) || name.include?(have) } }
+    title_match = question.include?(item[:title]) || item[:title].include?(question) ? 10 : 0
+    -(title_match + overlap * 2 - (item[:ingredients].length - overlap))
+  end.take(quick_mode == 'dinner' ? 16 : 10)
   context = {
     user_question: question,
+    today: today,
+    quick_mode: quick_mode,
+    avoid_previous_titles: Array(avoid_titles).map { |title| title.to_s[0, 80] }.take(6),
+    recipe_catalog: catalog,
     preferences: state.fetch('preferences', {}),
     hard_constraints: { priority: '过敏提示和忌口 > 临期食材 > 现有库存 > 口味偏好', excluded_foods: restricted_foods(state.fetch('preferences', {})) },
     inventory: inventory_context,
@@ -131,9 +146,7 @@ def ask_deepseek(question, state)
     【最高优先级安全规则】用户的“过敏提示”和“忌口”是硬性排除条件，优先级高于临期食材、库存利用和口味偏好。不得在菜名、食材、替代方案、步骤或补购清单中出现这些食材；无法满足时宁可不推荐菜谱并说明原因。只有通过该筛选后，才优先使用临期食材和现有库存。
     只返回 JSON，不能输出 Markdown。必须遵守以下结构：
     {
-      "summary":"一句话建议",
-      "insight":"简短库存或饮食总结",
-      "health_note":"大致热量或蛋白质等估算提示，必须包含‘仅供参考’",
+      "summary":"推荐做什么及原因，最多两句",
       "alerts":[{"name":"食材名","message":"预警说明","urgency":"high|medium"}],
       "recipes":[{
         "id":"唯一英文或数字 id",
@@ -151,7 +164,11 @@ def ask_deepseek(question, state)
       }],
       "shopping":[{"name":"缺少食材","quantity":1,"unit":"个|g|盒","category":"蔬果|肉禽|水产|调味品|其他","source":"菜名"}]
     }
-    recipes 最多返回 3 条。只有库存不足时才在 shopping 中列出缺料。若没有适合菜谱，recipes 可以为空，但仍要给出可执行建议。
+    只输出完整有效的 JSON 对象。summary 只说推荐做什么、为什么，控制在两句内，不盘点库存、不列库存数量、不重复预警内容；每道菜的 reason 也只写一句选择理由，不盘点库存。
+    若用户只要一道菜，recipes 只返回一条；最多返回 3 条。对于“今天吃什么”等普通做饭问题，优先从 recipe_catalog 中选择常见、做法合理的家常菜，选中时使用对应 id 和 title。不要把库存食材机械拼接成新菜名，不推荐缺乏常见做法的奇怪组合；用户明确指定库外菜品时可推荐真实常见菜。
+    当 quick_mode 为 expiry：重点是优先使用尚未过期、最接近到期的食材；优先给出不需补购的菜，少推荐一模一样的搭配。不要把已过期或不宜食用的食材用于菜谱。
+    当 quick_mode 为 dinner：给出最多 30 分钟、适合 2 人的完整家常晚餐；允许补购缺料，并把最佳菜所缺食材列在 shopping 中。先考虑尚未过期的临期食材，再尽量减少需要采购的食材种数；在条件相近时，避开 avoid_previous_titles 中的菜名，让两种快捷提问有不同建议。
+    无论哪种模式，已过期食材都不能参与烹饪推荐。有安全且符合忌口的菜时请至少推荐一道；必要的缺料放入 shopping。若确实没有适合菜谱，recipes 可以为空，但 summary 要简短说明原因。
   PROMPT
 
   uri = URI('https://api.deepseek.com/chat/completions')
@@ -166,22 +183,29 @@ def ask_deepseek(question, state)
   request.body = JSON.generate(
     model: ENV.fetch('DEEPSEEK_MODEL', 'deepseek-chat'),
     temperature: 0.4,
-    max_tokens: 2200,
+    max_tokens: 4000,
     response_format: { type: 'json_object' },
     messages: [
       { role: 'system', content: system_prompt },
       { role: 'user', content: JSON.generate(context) }
     ]
   )
-  response = http.request(request)
-  payload = JSON.parse(response.body)
-  unless response.is_a?(Net::HTTPSuccess)
-    message = payload.dig('error', 'message') || "DeepSeek 请求失败（#{response.code}）"
-    raise message
+  2.times do |attempt|
+    response = http.request(request)
+    payload = JSON.parse(response.body)
+    unless response.is_a?(Net::HTTPSuccess)
+      message = payload.dig('error', 'message') || "DeepSeek 请求失败（#{response.code}）"
+      raise message
+    end
+    content = payload.dig('choices', 0, 'message', 'content')
+    raise 'DeepSeek 未返回内容，请重试。' if content.to_s.strip.empty?
+    begin
+      return enforce_food_restrictions(normalize_agent_result(content), state.fetch('preferences', {}))
+    rescue RuntimeError => error
+      raise unless attempt.zero? && error.message == '模型没有返回可读取的 JSON 内容，请重试。'
+    end
   end
-  content = payload.dig('choices', 0, 'message', 'content')
-  raise 'DeepSeek 未返回内容，请重试。' if content.to_s.strip.empty?
-  enforce_food_restrictions(normalize_agent_result(content), state.fetch('preferences', {}))
+
 rescue Net::OpenTimeout, Net::ReadTimeout
   raise 'DeepSeek 请求超时，请稍后重试。'
 rescue SocketError, Errno::ECONNREFUSED, Errno::EHOSTUNREACH, Errno::ENETUNREACH
@@ -686,7 +710,7 @@ server.mount_proc '/' do |req, res|
       body = request_json(req)
       question = body && body['question'].to_s.strip
       raise '请输入想让厨房管家处理的任务。' if question.empty?
-      json_response(res, 200, ask_deepseek(question, read_state))
+      json_response(res, 200, ask_deepseek(question, read_state, body['recipeCatalog'], body['quickMode'], body['avoidTitles']))
       next
     end
 

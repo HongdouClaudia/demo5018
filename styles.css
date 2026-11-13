@@ -63,7 +63,7 @@
 .home-page .expiry-item{display:flex;justify-content:space-between;gap:4px;min-width:0;font-size:9px;line-height:1.35}
 .home-page .expiry-item strong{font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .home-page .expiry-item small{font-size:9px;white-space:nowrap;flex:none}
-.home-page .diet-tip-text{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;margin:0}
+.home-page .diet-tip-text{display:block;overflow:visible;white-space:normal;margin:0}
 .home-page .diet-tip-note{margin:7px 0 0}
 .home-page .recipe-visual{height:116px!important;position:relative;overflow:hidden;background:radial-gradient(circle at 50% 48%,#fff8eb 0 29%,transparent 30%),linear-gradient(135deg,#ffe1c8,#f5a27f)!important}
 .home-page .recipe-visual:before{content:"";position:absolute;width:118px;height:118px;border-radius:50%;background:rgba(255,255,255,.28);right:-38px;top:-53px}
@@ -85,3 +85,107 @@
 .home-page .nutrition-details summary{cursor:pointer}
 .home-page .tip-shopping-button:disabled{opacity:.6}
 .home-page .nutrition-breakdown{display:grid;gap:9px;margin:10px 0!important}
+
+/* 首页库存构成：库存类别环图与今日已记录消耗 */
+.home-page .nutrition-breakdown{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;margin:14px 0 0!important;color:var(--ink);font-size:11px!important}
+.home-page .nutrition-share,.home-page .nutrition-intake{min-width:0}
+.home-page .nutrition-share-title>strong,.home-page .nutrition-intake>strong{display:block;font-size:12px;margin-bottom:8px}
+.home-page .nutrition-donut{width:min(100%,128px);aspect-ratio:1;border-radius:50%;margin:2px auto 12px;display:grid;place-items:center}
+.home-page .nutrition-donut>span{width:57%;aspect-ratio:1;border-radius:50%;background:#fff;display:grid;place-items:center;text-align:center;font-size:11px;font-weight:700;line-height:1.35}
+.home-page .nutrition-legend{display:grid;gap:6px}
+.home-page .nutrition-legend-item,.home-page .nutrition-progress-item>div{display:flex;align-items:center;gap:5px;min-width:0}
+.home-page .nutrition-legend-item i,.home-page .nutrition-progress-item i{width:7px;height:7px;border-radius:50%;flex:none}
+.home-page .nutrition-legend-item span,.home-page .nutrition-progress-item span{min-width:0;flex:1}
+.home-page .nutrition-legend-item b,.home-page .nutrition-progress-item b{font-size:10px;white-space:nowrap;font-weight:600}
+.home-page .nutrition-intake>p{font-size:10px;margin:-4px 0 12px;color:var(--sub)}
+.home-page .nutrition-progress-item{margin-bottom:13px}
+.home-page .nutrition-progress-item>div{margin-bottom:5px}
+.home-page .nutrition-progress-track{display:block;height:7px;border-radius:99px;background:#eee9e4;overflow:hidden}
+.home-page .nutrition-progress-track>span{display:block;height:100%;border-radius:inherit}
+.home-page .nutrition-chart-note{font-size:10px!important;margin-top:10px!important;line-height:1.5}
+@media(max-width:360px){.home-page .nutrition-breakdown{gap:9px}.home-page .nutrition-legend-item b,.home-page .nutrition-progress-item b{font-size:9px}}
+
+/* Homepage recommendation preview. */
+.modal:has(.home-recommendation-modal){position:relative}
+.home-recommendation-modal{padding:2px 2px 0}
+.home-recommendation-modal>.eyebrow{margin:0 0 6px;color:var(--brand)}
+.home-recommendation-modal h2{padding-right:36px;margin:0 0 16px;line-height:1.35}
+.home-recommendation-copy{display:grid;gap:7px}
+.home-recommendation-copy strong{font-size:13px;color:var(--ink)}
+.home-recommendation-copy p{font-size:13px;line-height:1.6;color:var(--sub);margin:0 0 10px}
+.home-recommendation-footer{display:flex;align-items:flex-end;gap:14px;margin-top:12px;padding-top:14px;border-top:1px solid var(--line)}
+.home-recommendation-image{width:114px;height:96px;flex:none;border-radius:13px;overflow:hidden;background:linear-gradient(135deg,#ffe1c8,#f5a27f);display:grid;place-items:center}
+.home-recommendation-image img{width:100%;height:100%;object-fit:cover}
+.home-recommendation-image span{font-size:42px}
+.home-recommendation-next{flex:1;min-width:0;display:flex;align-items:flex-end;justify-content:flex-end;min-height:96px}
+.home-recommendation-next .primary-button{min-height:42px;padding:8px 12px;font-size:12px}
+.home-recommendation-next p{font-size:11px;line-height:1.5;color:var(--sub);margin:0 0 4px;text-align:right}
+.home-page .nutrition-chart-note{font-size:10px!important;color:var(--sub)!important;line-height:1.5;margin-top:10px!important}
+
+/* Homepage assistant results */
+.home-page .agent-result{scroll-margin-top:78px}
+.home-page .agent-advice{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;line-height:1.5;margin-bottom:6px}
+.home-page .agent-result>.section-title{margin-top:12px}
+.home-page .agent-empty-recipes{font-size:12px;line-height:1.5;color:var(--sub);margin:4px 0 0}
+
+/* Homepage recommendation purchase review */
+.home-page .agent-result .recipe-scroll{display:flex;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x proximity;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
+.home-page .agent-result .recipe-card{flex:0 0 min(68%,250px);width:min(68%,250px);scroll-snap-align:start}
+.home-recommendation-next{display:flex;flex-direction:column;gap:8px}
+.home-recommendation-next .secondary-button{width:100%}
+.recommendation-shopping-modal>.meta{margin:-8px 0 12px}
+.recommendation-shopping-list{display:grid;gap:10px;max-height:55vh;overflow-y:auto;padding-right:2px}
+.recommendation-shopping-item{padding:12px;background:#fff;border:1px solid var(--line);border-radius:14px}
+.recommendation-shopping-item>strong{font-size:13px;color:var(--brand)}
+.recommendation-shopping-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.recommendation-shopping-item>.meta{font-size:11px;margin:7px 0 0}
+.recommendation-shopping-modal .modal-actions{position:sticky;bottom:-19px;background:#fffaf5;padding:12px 0 19px;margin-top:8px}
+
+
+/* 首页：今日饮食复盘 */
+.home-page .daily-review-title{margin-top:18px}
+.home-page .daily-review-card{padding:16px;background:linear-gradient(145deg,#fff 0%,#fffaf4 100%)}
+.home-page .daily-review-heading{display:flex;align-items:flex-start;gap:11px}
+.home-page .daily-review-icon{width:34px;height:34px;display:grid;place-items:center;flex:none;border-radius:11px;background:var(--yellow-soft);color:#c8892d;font-size:18px;font-weight:700}
+.home-page .daily-review-heading p{margin:1px 0 0;color:var(--ink);font-size:14px;line-height:1.7}
+.home-page .daily-review-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:13px 0 4px}
+.home-page .daily-review-stats span{padding:9px 5px;border-radius:11px;background:#f7f3ee;color:var(--sub);font-size:10px;text-align:center;white-space:nowrap}
+.home-page .daily-review-stats b{display:block;margin-bottom:2px;color:var(--ink);font-size:17px}
+.home-page .daily-review-action{width:100%;display:flex;align-items:center;justify-content:center;gap:6px;margin-top:12px;padding:11px;border:0;border-radius:12px;background:#fff0e8;color:var(--brand);font-weight:700}
+.home-page .daily-review-action b{font-size:18px;line-height:1}
+.home-page .daily-review-note{display:block;margin:9px 0 0;text-align:center;font-size:10px}
+.daily-review-modal-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:4px 0 14px}
+.daily-review-modal-summary>div{padding:12px 5px;border-radius:12px;background:#f7f3ee;text-align:center}
+.daily-review-modal-summary b{display:block;color:var(--ink);font-size:22px}
+.daily-review-modal-summary span{color:var(--sub);font-size:10px}
+.daily-review-modal-copy{margin:0 0 15px;padding:13px 14px;border-radius:13px;background:#fff8f1;color:var(--ink);font-size:13px;line-height:1.7}
+.daily-review-detail{display:grid;margin-bottom:14px;border:1px solid var(--line);border-radius:13px;overflow:hidden}
+.daily-review-detail-row{display:flex;align-items:center;gap:8px;padding:11px 12px;border-bottom:1px solid var(--line);background:#fff}
+.daily-review-detail-row:last-child{border-bottom:0}
+.daily-review-detail-row i{width:8px;height:8px;border-radius:50%;flex:none}
+.daily-review-detail-row span{flex:1;color:var(--ink);font-size:12px}
+.daily-review-detail-row b{color:var(--sub);font-size:11px;font-weight:600}
+
+
+/* 库存结构与膳食指南参考对比 */
+.home-page .nutrition-share-title{display:flex;align-items:flex-start;justify-content:space-between;gap:6px;margin-bottom:8px}
+.home-page .nutrition-share-title>strong{margin-bottom:0}
+.home-page .nutrition-share-title>button{border:0;border-radius:99px;padding:4px 7px;background:#fff0e8;color:var(--brand);font-size:9px;font-weight:700;white-space:nowrap}
+.guide-reference-intro{margin:-2px 0 14px;color:var(--sub);font-size:12px;line-height:1.6}
+.guide-donut-compare{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:15px}
+.guide-donut-compare>div{padding:12px 8px;border:1px solid var(--line);border-radius:14px;background:#fff;text-align:center}
+.guide-donut-compare strong{display:block;margin-bottom:8px;font-size:12px}
+.guide-donut-compare .nutrition-donut{width:112px;max-width:100%;aspect-ratio:1;margin:auto;border-radius:50%;display:grid;place-items:center}
+.guide-donut-compare .nutrition-donut>span{width:57%;aspect-ratio:1;border-radius:50%;background:#fff;display:grid;place-items:center;color:var(--ink);font-size:10px;font-weight:700;line-height:1.35}
+.guide-reference-list{border:1px solid var(--line);border-radius:13px;overflow:hidden}
+.guide-reference-row{display:grid;grid-template-columns:8px minmax(0,1fr) auto auto;align-items:center;gap:7px;padding:9px 11px;border-bottom:1px solid var(--line);background:#fff}
+.guide-reference-row:last-child{border-bottom:0}
+.guide-reference-row i{width:8px;height:8px;border-radius:50%}
+.guide-reference-row span{font-size:12px}
+.guide-reference-row b,.guide-reference-row em{font-size:10px;font-style:normal;white-space:nowrap}
+.guide-reference-row b{color:var(--sub)}
+.guide-reference-row em{color:var(--brand)}
+.guide-reference-source{margin-top:13px;padding:12px;border-radius:13px;background:#f7f3ee}
+.guide-reference-source strong{font-size:12px}
+.guide-reference-source p{margin:5px 0 8px;color:var(--sub);font-size:10px;line-height:1.65}
+.guide-reference-source a{color:var(--brand);font-size:10px;font-weight:700;text-decoration:none}

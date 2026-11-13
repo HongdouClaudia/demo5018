@@ -8,6 +8,12 @@ window.RecipeStockBridge = {
 window.recipeFrameReady = () => {
   const channel = 'demo5018-recipes';
   const send = (type, extra={}) => parent.postMessage({channel,type,...extra}, location.origin);
+  const syncHomeReturn = () => requestAnimationFrame(() => {
+    if (returnTab !== 'home' || !currentDetailId) return;
+    document.querySelectorAll('[data-action="back-recipes"].back-link').forEach(button => {
+      button.textContent = '‹ 返回首页';
+    });
+  });
   let refreshing = Promise.resolve();
   const reloadSharedState = () => {
     refreshing = refreshing.catch(()=>{}).then(async () => {
@@ -37,6 +43,7 @@ window.recipeFrameReady = () => {
       } else if (message.type === 'refresh' || message.type === 'activate') {
         if (message.type === 'activate') returnTab = message.returnTab || null;
         await reloadSharedState();
+        syncHomeReturn();
       } else if (message.type === 'open-detail') {
         await refreshing;
         returnTab = message.returnTab || returnTab;
@@ -44,6 +51,7 @@ window.recipeFrameReady = () => {
           currentDetailId = message.recipeId;
           recipeScreen = 'browse';
           render();
+          syncHomeReturn();
           window.scrollTo(0,0);
         } else toast('这道菜已更新，请重新选择。');
       }
@@ -53,6 +61,13 @@ window.recipeFrameReady = () => {
     }
   });
   document.addEventListener('click', event => {
+    const homeBack = event.target.closest('[data-action="back-recipes"]');
+    if (homeBack && returnTab === 'home' && currentDetailId) {
+      event.preventDefault(); event.stopImmediatePropagation();
+      currentDetailId = null;
+      send('navigate',{tab:'home'});
+      return;
+    }
     const target = event.target.closest('[data-tab],[data-tab-go],[data-action="back-to-profile"]');
     if (!target) return;
     const tab = target.dataset.tab || target.dataset.tabGo || 'profile';
