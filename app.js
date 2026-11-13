@@ -533,6 +533,8 @@ async function ask(question,quickMode=''){
         if(retry.recipes?.length&&(!previousTitles.length||retry.recipes.some(recipe=>!previousTitles.includes(recipe.title))))result=retry;
       }catch(error){/* Keep the first response when the optional retry fails. */}
     }
+    if(mode==='dinner')result.recipes=(result.recipes||[]).filter(recipe=>Number(recipe.duration)>0&&Number(recipe.duration)<=30&&Number(recipe.servings)===2);
+    if(mode==='expiry')result.recipes=(result.recipes||[]).filter(recipe=>recipeExpiryPriority(recipe).count>0);
     if(['expiry','dinner'].includes(mode)&&(!result.recipes?.length||(previousTitles.length&&result.recipes.every(recipe=>previousTitles.includes(recipe.title))))){
       const fallback=fallbackAgentResult(mode,previousTitles);
       if(fallback.recipes.length||!result.recipes?.length)result=fallback;
