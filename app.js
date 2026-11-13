@@ -218,7 +218,32 @@ function nutritionBreakdown(balance){
     const label=recorded.recognized?`${Number(amount.toFixed(1))} / 3 份`:'暂无数据';
     return `<div class="nutrition-progress-item"><div><i style="background:${nutritionColors[index]}"></i><span>${group}</span><b>${label}</b></div><span class="nutrition-progress-track"><span style="width:${progress.toFixed(1)}%;background:${nutritionColors[index]}"></span></span></div>`;
   }).join('');
-  return `<div class="nutrition-breakdown"><div class="nutrition-share"><strong>库存类别占比</strong><div class="nutrition-donut" style="background:${chart}" role="img" aria-label="当前库存各类别估算份数占比"><span>库存<br>构成</span></div><div class="nutrition-legend">${legend}</div></div><div class="nutrition-intake"><strong>今日已记录消耗</strong><p>与每类 3 份参考目标比较</p>${rows}</div></div>`;
+  return `<div class="nutrition-breakdown"><div class="nutrition-share"><div class="nutrition-share-title"><strong>库存类别占比</strong><button data-action="open-guide-reference">官方推荐占比</button></div><div class="nutrition-donut" style="background:${chart}" role="img" aria-label="当前库存各类别估算份数占比"><span>库存<br>构成</span></div><div class="nutrition-legend">${legend}</div></div><div class="nutrition-intake"><strong>今日食材消耗记录</strong><p>与每类 3 份参考目标比较</p>${rows}</div></div>`;
+}
+function dietGuideReferenceModal(){
+  const balance=inventoryBalance(state.inventory||[]);
+  const currentTotal=nutritionGroups.reduce((sum,group)=>sum+(Number(balance.groups[group]?.servings)||0),0);
+  const guideServings={'谷薯主食':6.5,'蔬菜':3,'水果':275/150,'蛋白质':1.6,'奶类':1.2};
+  const guideTotal=nutritionGroups.reduce((sum,group)=>sum+guideServings[group],0);
+  const gradientFor=(values,total)=>{
+    if(!total)return '#eee9e4';
+    let position=0;
+    const stops=nutritionGroups.map((group,index)=>{
+      const share=values[group]/total*100;
+      const start=position;position+=share;
+      return share>0?`${nutritionColors[index]} ${start.toFixed(2)}% ${position.toFixed(2)}%`:null;
+    }).filter(Boolean);
+    return stops.length?`conic-gradient(${stops.join(',')})`:'#eee9e4';
+  };
+  const currentValues=Object.fromEntries(nutritionGroups.map(group=>[group,Number(balance.groups[group]?.servings)||0]));
+  const currentGradient=gradientFor(currentValues,currentTotal);
+  const guideGradient=gradientFor(guideServings,guideTotal);
+  const rows=nutritionGroups.map((group,index)=>{
+    const current=currentTotal?Math.round(currentValues[group]/currentTotal*100):0;
+    const guide=Math.round(guideServings[group]/guideTotal*100);
+    return `<div class="guide-reference-row"><i style="background:${nutritionColors[index]}"></i><span>${group}</span><b>库存 ${current}%</b><em>参考 ${guide}%</em></div>`;
+  }).join('');
+  modal(`<h2>官方推荐占比参考</h2><p class="guide-reference-intro">将当前库存结构与膳食指南建议量放在一起，方便观察类别差异。</p><div class="guide-donut-compare"><div><strong>当前库存</strong><div class="nutrition-donut" style="background:${currentGradient}"><span>库存<br>构成</span></div></div><div><strong>指南参考</strong><div class="nutrition-donut" style="background:${guideGradient}"><span>建议量<br>换算</span></div></div></div><div class="guide-reference-list">${rows}</div><div class="guide-reference-source"><strong>换算依据</strong><p>成年人每日：谷类 200～300g、薯类 50～100g；蔬菜不少于 300g；水果 200～350g；鱼禽肉蛋 120～200g；奶制品相当于液态奶 300ml 以上。图中取区间中值或最低建议量，再按本页“份”口径归一化，属于对照换算，并非指南发布的原始百分比。</p><a href="https://dg.cnsoc.org/article/04/J4-AsD_DR3OLQMnHG0-jZA.html" target="_blank" rel="noopener">来源：《中国居民膳食指南（2022）》</a></div><div class="modal-actions"><button type="button" class="primary-button" data-action="close-modal">知道了</button></div>`);
 }
 function nutritionHealthCard(balance) {
   const available = balance.score !== null;
@@ -360,7 +385,7 @@ function renderHome(){
   <div class="section-title"><h2>饮食小提示</h2></div><section class="card diet-tip-card"><p class="result-summary diet-tip-text">${tip.text}</p><p class="meta diet-tip-note">按库存整理，仅供参考</p><button class="tip-shopping-button" data-tab-go="shopping">进入采购</button></section>
   <div class="section-title daily-review-title"><h2>今日饮食复盘</h2><span class="meta">今天</span></div><section class="card daily-review-card"><div class="daily-review-heading"><span class="daily-review-icon">↗</span><p>${review.summary}</p></div>${review.operations.length?`<div class="daily-review-stats"><span><b>${review.operations.length}</b> 次烹饪</span><span><b>${review.activeGroups.length}</b> 类食材</span><span><b>${review.recognized}</b> 项记录</span></div>`:''}<button class="daily-review-action" data-action="open-daily-review">查看今日详情 <b>›</b></button><p class="meta daily-review-note">仅基于今天已确认的烹饪记录，仅供参考</p></section></div>`;
 }
-return {render:renderHome,recipeImage,openDailyReview:dailyDietReviewModal};
+return {render:renderHome,recipeImage,openDailyReview:dailyDietReviewModal,openGuideReference:dietGuideReferenceModal};
 })();
 // END HOMEPAGE-ONLY MODULE
 
@@ -648,6 +673,7 @@ function captureCamera(){const video=document.getElementById('camera-preview');i
 async function importShopping(items){if(!items?.length){toast('当前没有需要补购的食材');return;}items.forEach(item=>state.shopping.push({id:`shop-${Date.now()}-${Math.random().toString(16).slice(2)}`,name:item.name,quantity:item.quantity,unit:item.unit,category:item.category||'其他',source:`菜谱导入 · ${item.source||selectedRecipe?.title||'智能推荐'}`,status:'pending',completedAt:''}));await persist();toast('已加入采购清单');}
 
 document.addEventListener('click',async event=>{const target=event.target.closest('[data-action],[data-tab],[data-tab-go]');if(!target)return;if(target.dataset.tab){currentTab=target.dataset.tab;selectedRecipe=null;returnTab=null;inventoryEntryView=null;photoPreviewUrl='';if(currentTab!=='inventory'){inventoryManageMode=false;selectedInventoryIds.clear();}render();return;}if(target.dataset.tabGo){currentTab=target.dataset.tabGo;selectedRecipe=null;returnTab=target.dataset.returnTab||null;inventoryEntryView=null;photoPreviewUrl='';if(currentTab!=='inventory'){inventoryManageMode=false;selectedInventoryIds.clear();}render();return;}const action=target.dataset.action;
+  if(action==='open-guide-reference'){homepage.openGuideReference();return;}
   if(action==='open-daily-review'){homepage.openDailyReview();return;}
   if(action==='open-ai-entry'){aiEntryDestination=inventoryEntryView==='manual'?'cart':'inventory';aiInventoryModal();return;}
   if(action==='open-manual-entry'){closeModal();inventoryEntryView='manual';manualEntryCategory='蔬菜';manualEntrySearch='';manualCartExpanded=false;render();return;}
