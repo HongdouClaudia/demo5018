@@ -89,7 +89,7 @@
 /* 首页库存构成：库存类别环图与今日已记录消耗 */
 .home-page .nutrition-breakdown{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;margin:14px 0 0!important;color:var(--ink);font-size:11px!important}
 .home-page .nutrition-share,.home-page .nutrition-intake{min-width:0}
-.home-page .nutrition-share>strong,.home-page .nutrition-intake>strong{display:block;font-size:12px;margin-bottom:8px}
+.home-page .nutrition-share-title>strong,.home-page .nutrition-intake>strong{display:block;font-size:12px;margin-bottom:8px}
 .home-page .nutrition-donut{width:min(100%,128px);aspect-ratio:1;border-radius:50%;margin:2px auto 12px;display:grid;place-items:center}
 .home-page .nutrition-donut>span{width:57%;aspect-ratio:1;border-radius:50%;background:#fff;display:grid;place-items:center;text-align:center;font-size:11px;font-weight:700;line-height:1.35}
 .home-page .nutrition-legend{display:grid;gap:6px}
@@ -165,3 +165,27 @@
 .daily-review-detail-row i{width:8px;height:8px;border-radius:50%;flex:none}
 .daily-review-detail-row span{flex:1;color:var(--ink);font-size:12px}
 .daily-review-detail-row b{color:var(--sub);font-size:11px;font-weight:600}
+
+
+/* 库存结构与膳食指南参考对比 */
+.home-page .nutrition-share-title{display:flex;align-items:flex-start;justify-content:space-between;gap:6px;margin-bottom:8px}
+.home-page .nutrition-share-title>strong{margin-bottom:0}
+.home-page .nutrition-share-title>button{border:0;border-radius:99px;padding:4px 7px;background:#fff0e8;color:var(--brand);font-size:9px;font-weight:700;white-space:nowrap}
+.guide-reference-intro{margin:-2px 0 14px;color:var(--sub);font-size:12px;line-height:1.6}
+.guide-donut-compare{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:15px}
+.guide-donut-compare>div{padding:12px 8px;border:1px solid var(--line);border-radius:14px;background:#fff;text-align:center}
+.guide-donut-compare strong{display:block;margin-bottom:8px;font-size:12px}
+.guide-donut-compare .nutrition-donut{width:112px;max-width:100%;aspect-ratio:1;margin:auto;border-radius:50%;display:grid;place-items:center}
+.guide-donut-compare .nutrition-donut>span{width:57%;aspect-ratio:1;border-radius:50%;background:#fff;display:grid;place-items:center;color:var(--ink);font-size:10px;font-weight:700;line-height:1.35}
+.guide-reference-list{border:1px solid var(--line);border-radius:13px;overflow:hidden}
+.guide-reference-row{display:grid;grid-template-columns:8px minmax(0,1fr) auto auto;align-items:center;gap:7px;padding:9px 11px;border-bottom:1px solid var(--line);background:#fff}
+.guide-reference-row:last-child{border-bottom:0}
+.guide-reference-row i{width:8px;height:8px;border-radius:50%}
+.guide-reference-row span{font-size:12px}
+.guide-reference-row b,.guide-reference-row em{font-size:10px;font-style:normal;white-space:nowrap}
+.guide-reference-row b{color:var(--sub)}
+.guide-reference-row em{color:var(--brand)}
+.guide-reference-source{margin-top:13px;padding:12px;border-radius:13px;background:#f7f3ee}
+.guide-reference-source strong{font-size:12px}
+.guide-reference-source p{margin:5px 0 8px;color:var(--sub);font-size:10px;line-height:1.65}
+.guide-reference-source a{color:var(--brand);font-size:10px;font-weight:700;text-decoration:none}
