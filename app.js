@@ -607,8 +607,8 @@ function profile(){
   const allergyTags=p.allergies||[];
   return `<section class="profile-cover">
     <div class="profile-cover-top"><span class="profile-kicker">食光管家</span><button class="profile-more" aria-label="编辑个人资料" data-action="open-profile-settings">···</button></div>
-    <div class="profile-person"><div class="profile-avatar">${profileAvatar}</div><div><h2>${esc(profileName)}</h2><p>让每一餐都更合心意</p></div></div>
-    <div class="profile-summary"><div><b>${cooked}</b><span>完成烹饪</span></div><i></i><div><b>${favorites.length}</b><span>收藏菜谱</span></div><i></i><div><b>${p.reminder?'已开启':'未开启'}</b><span>临期提醒</span></div></div>
+    <div class="profile-person"><div class="profile-avatar">${profileAvatar}</div><div><h2>${esc(profileName)}</h2><p class="profile-signature">${esc(user.signature??'让每一餐都更合心意')}</p></div></div>
+    <div class="profile-summary"><div><b>${cooked}</b><span>完成烹饪</span></div><i></i><div><b>${favorites.length}</b><span>收藏菜谱</span></div></div>
   </section>
   <section class="profile-preferences-card">
     <div class="profile-card-heading"><div><span class="profile-icon">✦</span><div><h2>偏好记忆</h2><p>这些信息会帮助管家安排更适合你的菜谱</p></div></div><button data-action="edit-preferences">编辑</button></div>
@@ -617,7 +617,7 @@ function profile(){
     <div class="preference-group"><span>过敏提示</span><div class="preference-tags danger">${allergyTags.length?allergyTags.map(tag=>'<em>'+esc(tag)+'</em>').join(''):'<small>暂未设置</small>'}</div></div>
     <div class="reminder-row"><div><strong>临期预警</strong><span>临期食材优先提醒</span></div><input class="switch" aria-label="临期预警" type="checkbox" ${p.reminder?'checked':''} data-action="toggle-reminder"></div>
   </section>
-  <div class="section-title profile-section-title"><h2>我的收藏</h2><button data-tab-go="recipes" data-return-tab="profile">去菜谱看看</button></div>
+  <div class="section-title profile-section-title"><h2>我的收藏</h2></div>
   <section class="card profile-favorites">${favorites.length?favorites.slice(0,3).map(r=>'<div class="inventory-item"><div class="food-icon">'+esc(r.imageEmoji||'🍲')+'</div><div class="item-main"><strong>'+esc(r.title)+'</strong><p>'+esc(r.duration||30)+' 分钟 · '+esc(r.difficulty||'简单')+'</p></div><span class="row-arrow">›</span></div>').join(''):'<div class="profile-empty"><span>♡</span><div><b>还没有收藏菜谱</b><p>喜欢的菜谱，点按爱心就会保存在这里。</p></div><button data-tab-go="recipes" data-return-tab="profile">去发现</button></div>'}</section>
   <div class="section-title profile-section-title"><h2>最近记录</h2><span class="meta">${history.length} 条</span></div>
   <section class="card profile-history">${history.length?history.slice(0,4).map(h=>'<div class="history-row"><span class="history-icon '+esc(h.type||'other')+'">'+(h.type==='cook'?'⌁':'＋')+'</span><div><strong>'+esc(h.title)+'</strong><p>'+esc(h.detail||'')+' '+esc(h.date||'')+'</p></div></div>').join(''):'<div class="empty"><span class="empty-icon">◷</span><b>还没有记录</b><span>完成烹饪或采购入库后会显示在这里。</span></div>'}</section>
@@ -642,11 +642,57 @@ function updateAiReviewWeight(row){const name=row.querySelector('[name="name"]')
 function inventoryModal(item,creating=false){const editing=Boolean(item)&&!creating;const unitOptions=manualEntryUnitOptions(findFoodKnowledge(item?.name),item?.unit||'个');modal(`<h2>${editing?'编辑食材':'食材录入'}</h2><form id="inventory-form" data-id="${editing?esc(item?.id||''):''}"><label>食材名称</label><input name="name" required value="${esc(item?.name||'')}"><label>数量</label><input name="quantity" type="number" min="0" step="0.1" required value="${esc(item?.quantity||'')}"><label>常用计量单位</label><select name="unit">${unitOptions}</select><p class="weight-conversion-hint">系统将根据食材、数量和单位自动换算估计克数。</p><label>储存位置</label><select name="location"><option ${item?.location==='冷藏'?'selected':''}>冷藏</option><option ${item?.location==='冷冻'?'selected':''}>冷冻</option></select><label>购入日期</label><input name="purchaseDate" type="date" required value="${esc(item?.purchaseDate||item?.createdAt||today)}"><div class="modal-actions"><button type="button" class="secondary-button" data-action="close-modal">取消</button><button class="primary-button" type="submit">保存</button></div></form>`);}
 function shoppingModal(){modal(`<h2>新增采购食材</h2><form id="shopping-form"><label>食材名称</label><input name="name" required><label>数量</label><input name="quantity" type="number" min="0" step="0.1" required><label>单位</label><input name="unit" required value="个"><label>分类</label><select name="category"><option>蔬果</option><option>肉禽</option><option>水产</option><option>调味品</option><option>其他</option></select><div class="modal-actions"><button type="button" class="secondary-button" data-action="close-modal">取消</button><button class="primary-button" type="submit">加入清单</button></div></form>`);}
 function preferenceModal(){const p=state.preferences;modal(`<h2>编辑偏好</h2><form id="preference-form"><label>喜欢的口味（用逗号分隔）</label><input name="flavors" value="${esc((p.flavors||[]).join('，'))}"><label>忌口（用逗号分隔）</label><input name="avoid" value="${esc((p.avoid||[]).join('，'))}"><label>饮食需求（用逗号分隔）</label><input name="needs" value="${esc((p.needs||[]).join('，'))}"><label>过敏提示（用逗号分隔）</label><input name="allergies" value="${esc((p.allergies||[]).join('，'))}" placeholder="例如：花生、虾、牛奶"><p class="form-hint">过敏提示会作为菜谱生成的最高优先级规则。</p><div class="modal-actions"><button type="button" class="secondary-button" data-action="close-modal">取消</button><button class="primary-button" type="submit">保存偏好</button></div></form>`);}
-function userProfileModal(){const user=state.profile||{};const avatar=user.avatar?'<img src="'+esc(user.avatar)+'" alt="当前头像">':'👩🏻‍🍳';modal('<button type="button" class="modal-close" aria-label="关闭" data-action="close-modal">×</button><h2>个人资料</h2><form id="user-profile-form"><div class="avatar-editor"><div class="avatar-editor-preview">'+avatar+'</div><div><strong>个人头像</strong><p>支持上传 JPG、PNG 或 WebP 图片</p><label class="avatar-upload" for="profile-avatar-file">上传头像</label><input class="avatar-file-input" id="profile-avatar-file" name="avatar" type="file" accept="image/png,image/jpeg,image/webp"></div></div><label>用户名称</label><input name="name" maxlength="20" value="'+esc(user.name||'我的厨房')+'" placeholder="输入你的名称"><div class="modal-actions"><button type="button" class="secondary-button" data-action="close-modal">取消</button><button class="primary-button" type="submit">保存资料</button></div></form>');}
+function userProfileModal(){
+  const user=state.profile||{};
+  const avatar=user.avatar?'<img src="'+esc(user.avatar)+'" alt="当前头像">':'👩🏻‍🍳';
+  modal('<button type="button" class="modal-close" aria-label="关闭" data-action="close-modal">×</button><h2>个人资料</h2><form id="user-profile-form"><input class="avatar-file-input" id="profile-avatar-file" name="avatar" type="file" accept="image/png,image/jpeg,image/webp"><div data-profile-fields><div class="avatar-editor"><div class="avatar-editor-preview">'+avatar+'</div><div><strong>个人头像</strong><p>支持 JPG、PNG 或 WebP，最大 2MB</p><label class="avatar-upload" for="profile-avatar-file">上传头像</label></div></div><label for="profile-name">用户名称</label><input id="profile-name" name="name" maxlength="20" value="'+esc(user.name||'我的厨房')+'" placeholder="输入你的名称"><label for="profile-signature">个性签名</label><input id="profile-signature" name="signature" maxlength="60" value="'+esc(user.signature??'让每一餐都更合心意')+'" placeholder="写一句你的个性签名（最多60字）"><div class="modal-actions"><button type="button" class="secondary-button" data-action="close-modal">取消</button><button class="primary-button" type="submit">保存资料</button></div></div><section class="avatar-confirmation" data-avatar-review hidden aria-label="头像预览"><h3>预览新头像</h3><p class="form-hint" data-avatar-status>正在读取图片…</p><div class="avatar-confirmation-image"></div><label class="avatar-upload" for="profile-avatar-file">重新选择</label><div class="modal-actions"><button type="button" class="secondary-button" data-action="cancel-avatar">取消更换</button><button type="button" class="primary-button" data-action="confirm-avatar" disabled>确认使用</button></div></section></form>');
+}
+function showAvatarReview(form,visible){
+  form.querySelector('[data-profile-fields]').hidden=visible;
+  form.querySelector('[data-avatar-review]').hidden=!visible;
+}
+async function previewProfileAvatar(input){
+  const file=input.files?.[0],form=input.closest('form');
+  if(!file||!form)return;
+  if(!['image/jpeg','image/png','image/webp'].includes(file.type)){input.value='';toast('请选择 JPG、PNG 或 WebP 图片');return;}
+  if(file.size>2*1024*1024){input.value='';toast('头像请控制在 2MB 以内');return;}
+  const selection=Symbol();form.avatarSelection=selection;
+  form.avatarCandidate=null;
+  const confirm=form.querySelector('[data-action="confirm-avatar"]');
+  const status=form.querySelector('[data-avatar-status]');
+  const preview=form.querySelector('.avatar-confirmation-image');
+  confirm.disabled=true;status.textContent='正在读取图片…';preview.innerHTML='';
+  showAvatarReview(form,true);
+  try{
+    const url=await fileToDataUrl(file);
+    const image=new Image();
+    await new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=()=>reject(new Error('图片无法打开，请重新选择。'));image.src=url;});
+    if(!form.isConnected||form.avatarSelection!==selection)return;
+    form.avatarCandidate=url;
+    preview.innerHTML='<img src="'+esc(url)+'" alt="新头像预览">';
+    status.textContent='这是头像显示的效果，确认后再保存资料。';
+    confirm.disabled=false;
+  }catch(error){if(form.isConnected&&form.avatarSelection===selection){input.value='';status.textContent=error.message;}}
+}
+document.addEventListener('change',event=>{if(event.target.id==='profile-avatar-file')previewProfileAvatar(event.target);});
+document.addEventListener('click',event=>{
+  const button=event.target.closest('[data-action="confirm-avatar"],[data-action="cancel-avatar"]');
+  if(!button)return;
+  const form=button.closest('#user-profile-form');
+  if(!form)return;
+  if(button.dataset.action==='confirm-avatar'){
+    if(!form.avatarCandidate)return;
+    form.avatarDraft=form.avatarCandidate;
+    form.querySelector('.avatar-editor-preview').innerHTML='<img src="'+esc(form.avatarDraft)+'" alt="已确认的新头像">';
+  }
+  form.avatarSelection=null;form.avatarCandidate=null;
+  form.querySelector('[name="avatar"]').value='';
+  showAvatarReview(form,false);
+});
 function fileToDataUrl(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('头像读取失败，请重新选择图片。'));reader.readAsDataURL(file);});}
 function cookingHistoryModal(){const cooks=(state.history||[]).filter(h=>h.type==='cook'&&h.recipeId);const rows=cooks.length?cooks.map(h=>'<div class="history-row"><span class="history-icon cook">'+esc(h.imageEmoji||'⌁')+'</span><div><strong>'+esc(h.recipeTitle||h.title)+'</strong><p>'+esc(h.detail||'')+' · '+esc(h.date||'')+'</p></div></div>').join(''):'<div class="empty"><span class="empty-icon">◷</span><b>还没有烹饪记录</b><span>从菜谱点击开始制作并确认用量后，会显示在这里。</span></div>';modal('<h2>烹饪历史</h2><section class="modal-history">'+rows+'</section><div class="modal-actions"><button type="button" class="primary-button" data-action="close-modal">知道了</button></div>');}
 function consumptionReviewModal(){const cooks=(state.history||[]).filter(h=>h.type==='cook'&&h.recipeId);modal('<h2>消耗复盘</h2><div class="review-summary"><b>'+cooks.length+'</b><span>已完成烹饪</span></div><p class="meta">仅统计从菜谱点击“开始制作”并确认实际用量的记录；确认后会同步扣减冰箱库存。</p><div class="modal-actions"><button type="button" class="primary-button" data-action="close-modal">知道了</button></div>');}
-function reminderSettingsModal(){const p=state.preferences;const row=(key,title,detail)=>'<div class="reminder-setting-row"><div><strong>'+title+'</strong><p>'+detail+'</p></div><input class="switch" aria-label="'+title+'" type="checkbox" '+(p[key]?'checked':'')+' data-action="toggle-reminder-setting" data-key="'+key+'"></div>';modal('<h2>提醒设置</h2><div class="reminder-settings-list">'+row('lowStockReminder','库存不足提醒','常用食材不足时，提醒你补货')+row('dailyMealReminder','今日做饭提醒','在设定的用餐时间提醒你查看库存')+row('reminder','临期食材提醒','优先提醒即将到期的食材')+'</div><div class="modal-actions"><button type="button" class="primary-button" data-action="close-modal">完成</button></div>');}
+function reminderSettingsModal(){const p=state.preferences;const row=(key,title,detail)=>'<div class="reminder-setting-row"><div><strong>'+title+'</strong><p>'+detail+'</p></div><input class="switch" aria-label="'+title+'" type="checkbox" '+(p[key]?'checked':'')+' data-action="toggle-reminder-setting" data-key="'+key+'"></div>';modal('<h2>提醒设置</h2><div class="reminder-settings-list">'+row('reminder','临期食材提醒','优先提醒即将到期的食材')+'</div><div class="modal-actions"><button type="button" class="primary-button" data-action="close-modal">完成</button></div>');}
 function privacyDataModal(){modal('<h2>隐私与数据管理</h2><p class="meta privacy-copy">你的偏好、库存和烹饪记录仅用于生成个性化的厨房建议。当前版本不提供家庭共享功能。</p><div class="modal-actions"><button type="button" class="primary-button" data-action="close-modal">知道了</button></div>');}
 function cookingModal(recipe){const rows=recipe.ingredients.filter(i=>i.available&&i.inventoryId).map(i=>`<label>${esc(i.name)}（${esc(i.unit)}）<input type="number" data-consume="${esc(i.inventoryId)}" data-name="${esc(i.name)}" step="0.1" min="0" value="${esc(i.quantity)}"></label>`).join('');modal(`<h2>确认实际消耗</h2><p class="meta">确认后将扣减冰箱库存，并记录本次烹饪。</p><form id="cook-form" data-recipe="${esc(recipe.id)}">${rows||'<p class="meta">这道菜没有可匹配的库存食材。</p>'}<div class="modal-actions"><button type="button" class="secondary-button" data-action="close-modal">取消</button><button class="primary-button" type="submit">确认完成</button></div></form>`);}
 async function ask(question,quickMode=''){
@@ -738,6 +784,6 @@ document.addEventListener('submit',async event=>{event.preventDefault();const fo
     toast('保存失败，请重试');
   }
   return;
-} if(form.id==='shopping-form'){const data=new FormData(form);state.shopping.push({id:`shop-${Date.now()}`,name:data.get('name').trim(),quantity:Number(data.get('quantity')),unit:data.get('unit').trim(),category:data.get('category'),source:'手动新增',status:'pending',completedAt:''});await persist();closeModal();render();toast('已加入采购清单');return;}if(form.id==='preference-form'){const data=new FormData(form);const split=v=>v.split(/[，,]/).map(x=>x.trim()).filter(Boolean);state.preferences.flavors=split(data.get('flavors'));state.preferences.avoid=split(data.get('avoid'));state.preferences.needs=split(data.get('needs'));state.preferences.allergies=split(data.get('allergies'));await persist();closeModal();render();toast('偏好已更新');return;}if(form.id==='user-profile-form'){const data=new FormData(form);const file=form.querySelector('[name="avatar"]').files[0];if(file&&file.size>2*1024*1024){toast('头像请控制在 2MB 以内');return;}try{const avatar=file?await fileToDataUrl(file):(state.profile||{}).avatar||'';state.profile={...(state.profile||{}),name:data.get('name').trim()||'我的厨房',avatar};await persist();closeModal();render();toast('个人资料已保存');}catch(error){toast(error.message)}return;}if(form.id==='cook-form'){const recipe=findRecipe(form.dataset.recipe);const consumption=[...form.querySelectorAll('[data-consume]')].map(input=>({inventoryId:input.dataset.consume,quantity:Number(input.value)})).filter(i=>i.quantity>0);try{state=await api('/api/cook',{method:'POST',body:JSON.stringify({recipe,consumption})});closeModal();selectedRecipe=null;currentTab='inventory';toast('烹饪完成，库存已更新');render();}catch(error){toast(error.message)}return;}});
+} if(form.id==='shopping-form'){const data=new FormData(form);state.shopping.push({id:`shop-${Date.now()}`,name:data.get('name').trim(),quantity:Number(data.get('quantity')),unit:data.get('unit').trim(),category:data.get('category'),source:'手动新增',status:'pending',completedAt:''});await persist();closeModal();render();toast('已加入采购清单');return;}if(form.id==='preference-form'){const data=new FormData(form);const split=v=>v.split(/[，,]/).map(x=>x.trim()).filter(Boolean);state.preferences.flavors=split(data.get('flavors'));state.preferences.avoid=split(data.get('avoid'));state.preferences.needs=split(data.get('needs'));state.preferences.allergies=split(data.get('allergies'));await persist();closeModal();render();toast('偏好已更新');return;}if(form.id==='user-profile-form'){if(!form.querySelector('[data-avatar-review]').hidden){toast('请先确认或取消新头像');return;}const data=new FormData(form);const previous=state.profile;try{const avatar=form.avatarDraft??(state.profile||{}).avatar??'';state.profile={...(state.profile||{}),name:data.get('name').trim()||'我的厨房',signature:data.get('signature').trim().slice(0,60),avatar};await persist();closeModal();render();toast('个人资料已保存');}catch(error){state.profile=previous;toast(error.message)}return;}if(form.id==='cook-form'){const recipe=findRecipe(form.dataset.recipe);const consumption=[...form.querySelectorAll('[data-consume]')].map(input=>({inventoryId:input.dataset.consume,quantity:Number(input.value)})).filter(i=>i.quantity>0);try{state=await api('/api/cook',{method:'POST',body:JSON.stringify({recipe,consumption})});closeModal();selectedRecipe=null;currentTab='inventory';toast('烹饪完成，库存已更新');render();}catch(error){toast(error.message)}return;}});
 
 loadState().catch(error=>{app.innerHTML=`<section class="card empty"><span class="empty-icon">!</span><b>无法启动厨房管家</b><span>${esc(error.message)}</span></section>`;});
