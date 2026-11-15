@@ -189,3 +189,6 @@
 .guide-reference-source strong{font-size:12px}
 .guide-reference-source p{margin:5px 0 8px;color:var(--sub);font-size:10px;line-height:1.65}
 .guide-reference-source a{color:var(--brand);font-size:10px;font-weight:700;text-decoration:none}
+
+/* Personal profile editing and avatar confirmation. */
+.profile-person>div:last-child{min-width:0;flex:1}.profile-signature{overflow-wrap:anywhere;white-space:pre-wrap}.avatar-confirmation{text-align:center}.avatar-confirmation h3{font-size:18px;margin:8px 0}.avatar-confirmation-image{width:160px;height:160px;margin:22px auto;border-radius:40px;overflow:hidden;background:var(--brand-soft);box-shadow:0 6px 18px rgba(158,79,53,.12)}.avatar-confirmation-image img{width:100%;height:100%;object-fit:cover}.avatar-confirmation .primary-button:disabled{opacity:.5;cursor:wait}.avatar-confirmation[hidden],[data-profile-fields][hidden]{display:none}
