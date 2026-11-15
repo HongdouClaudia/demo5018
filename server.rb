@@ -18,7 +18,10 @@ ROOT = File.expand_path(__dir__)
 require_relative 'recipe_inventory'
 DATA_PATH = File.expand_path(ENV.fetch('DATA_PATH', File.join(ROOT, 'data.json')))
 SEED_PATH = File.join(ROOT, 'seed.json')
+FOOD_KNOWLEDGE_PATH = File.join(ROOT, 'food_knowledge.json')
+FOOD_KNOWLEDGE_SUPPLEMENT_PATH = File.expand_path(ENV.fetch('FOOD_KNOWLEDGE_SUPPLEMENT_PATH', File.join(ROOT, 'food_knowledge_supplement.json')))
 STATE_MUTEX = Mutex.new
+KNOWLEDGE_MUTEX = Mutex.new
 
 def load_env_file
   env_path = File.join(ROOT, '.env')
@@ -42,6 +45,141 @@ def write_state(state)
   state['revision'] = state.fetch('revision', 0).to_i + 1
   File.write("#{DATA_PATH}.tmp", JSON.pretty_generate(state))
   File.rename("#{DATA_PATH}.tmp", DATA_PATH)
+end
+
+def read_food_knowledge_supplement
+  return { 'schema_version' => 1, 'updated_at' => nil, 'foods' => [] } unless File.file?(FOOD_KNOWLEDGE_SUPPLEMENT_PATH)
+  data = JSON.parse(File.read(FOOD_KNOWLEDGE_SUPPLEMENT_PATH))
+  data.is_a?(Hash) && data['foods'].is_a?(Array) ? data : { 'schema_version' => 1, 'updated_at' => nil, 'foods' => [] }
+rescue JSON::ParserError
+  { 'schema_version' => 1, 'updated_at' => nil, 'foods' => [] }
+end
+
+def write_food_knowledge_supplement(data)
+  FileUtils.mkdir_p(File.dirname(FOOD_KNOWLEDGE_SUPPLEMENT_PATH))
+  File.write("#{FOOD_KNOWLEDGE_SUPPLEMENT_PATH}.tmp", JSON.pretty_generate(data))
+  File.rename("#{FOOD_KNOWLEDGE_SUPPLEMENT_PATH}.tmp", FOOD_KNOWLEDGE_SUPPLEMENT_PATH)
+end
+
+def normalized_food_name(value)
+  value.to_s.strip.downcase.gsub(/[\s·•,，。\/／()（）_-]/, '')
+end
+
+def food_record_names(record)
+  [record['canonical_name'], record['name'], *Array(record['common_names']), *Array(record['aliases'])]
+    .map { |name| normalized_food_name(name) }.reject(&:empty?).uniq
+end
+
+def find_food_record(records, names)
+  normalized = Array(names).map { |name| normalized_food_name(name) }.reject(&:empty?)
+  records.find { |record| !(food_record_names(record) & normalized).empty? }
+end
+
+def merge_supplement_fields(primary, supplement)
+  merged = Marshal.load(Marshal.dump(primary))
+  %w[common_names aliases category_tags].each do |field|
+    merged[field] = (Array(primary[field]) + Array(supplement[field])).map(&:to_s).map(&:strip).reject(&:empty?).uniq
+  end
+  merged['units'] = (supplement['units'].is_a?(Hash) ? supplement['units'] : {}).merge(primary['units'].is_a?(Hash) ? primary['units'] : {})
+  %w[name canonical_name category category_tag icon default_storage knowledge_source confirmed_at].each do |field|
+    merged[field] = supplement[field] if merged[field].to_s.strip.empty? && !supplement[field].to_s.strip.empty?
+  end
+  merged
+end
+
+def merged_food_knowledge
+  base = JSON.parse(File.read(FOOD_KNOWLEDGE_PATH))
+  foods = Array(base['foods']).map { |food| Marshal.load(Marshal.dump(food)) }
+  supplement = read_food_knowledge_supplement
+  Array(supplement['foods']).each do |extra|
+    existing = find_food_record(foods, food_record_names(extra))
+    if existing
+      foods[foods.index(existing)] = merge_supplement_fields(existing, extra)
+    else
+      foods << extra
+    end
+  end
+  base['foods'] = foods
+  base['supplement'] = {
+    'updated_at' => supplement['updated_at'],
+    'record_count' => Array(supplement['foods']).length,
+    'policy' => 'formal_knowledge_first'
+  }
+  base
+end
+
+def supplement_food_knowledge(items)
+  allowed_categories = %w[蔬菜 菌菇 水果 肉类 蛋类 海鲜 谷物杂粮 豆制品 乳制品 烘焙 其他]
+  formal = JSON.parse(File.read(FOOD_KNOWLEDGE_PATH))
+  formal_foods = Array(formal['foods'])
+  supplement = read_food_knowledge_supplement
+  supplement_foods = Array(supplement['foods'])
+  added = updated = skipped = 0
+
+  Array(items).first(20).each do |item|
+    next skipped += 1 unless item.is_a?(Hash)
+    name = item['name'].to_s.strip[0, 60]
+    next skipped += 1 if name.empty?
+    aliases = Array(item['aliases']).map { |alias_name| alias_name.to_s.strip[0, 60] }.reject(&:empty?).first(8)
+    match_names = [name, *aliases]
+    formal_match = find_food_record(formal_foods, match_names)
+    supplement_match = find_food_record(supplement_foods, formal_match ? food_record_names(formal_match) + match_names : match_names)
+    canonical_name = formal_match&.fetch('canonical_name', nil).to_s.strip
+    canonical_name = supplement_match&.fetch('canonical_name', nil).to_s.strip if canonical_name.empty?
+    canonical_name = name if canonical_name.empty?
+    common_names = [canonical_name, name, *aliases].reject(&:empty?).uniq
+    category_tag = allowed_categories.include?(item['categoryTag'].to_s) ? item['categoryTag'].to_s : '其他'
+    quantity = Float(item['quantity']) rescue nil
+    estimated_grams = Float(item['estimatedGrams']) rescue nil
+    unit = item['unit'].to_s.strip[0, 20]
+    unit_grams = quantity&.positive? && estimated_grams&.positive? ? (estimated_grams / quantity).round(2) : nil
+    units = unit.empty? || !unit_grams&.finite? || unit_grams > 100_000 ? {} : { unit => unit_grams }
+    candidate = {
+      'id' => "supplement-#{Digest::SHA256.hexdigest(canonical_name)[0, 12]}",
+      'name' => canonical_name,
+      'canonical_name' => canonical_name,
+      'common_names' => common_names,
+      'aliases' => common_names.reject { |entry| entry == canonical_name },
+      'category' => category_tag,
+      'category_tag' => category_tag,
+      'category_tags' => [category_tag],
+      'icon' => '🍽️',
+      'units' => units,
+      'default_storage' => item['location'] == '冷冻' ? 'frozen' : 'refrigerated',
+      'knowledge_source' => 'ai_user_confirmed',
+      'confirmed_at' => Time.now.strftime('%Y-%m-%d %H:%M:%S')
+    }
+    # The formal record always wins. Only aliases, missing units, or actually absent fields are retained in the supplement.
+    if formal_match
+      candidate = merge_supplement_fields(candidate, formal_match)
+      candidate['common_names'] = common_names - Array(formal_match['common_names'])
+      candidate['aliases'] = candidate['common_names'] - [formal_match['canonical_name']]
+      candidate['units'] = units.reject { |key, _| formal_match.fetch('units', {}).key?(key) }
+      %w[category category_tag category_tags icon default_storage].each { |field| candidate.delete(field) unless formal_match[field].nil? || formal_match[field].respond_to?(:empty?) && formal_match[field].empty? }
+      candidate['canonical_name'] = formal_match['canonical_name']
+      candidate['name'] = formal_match['name'] || formal_match['canonical_name']
+    end
+    if supplement_match
+      index = supplement_foods.index(supplement_match)
+      merged = merge_supplement_fields(supplement_match, candidate)
+      if merged == supplement_match
+        skipped += 1
+      else
+        supplement_foods[index] = merged
+        updated += 1
+      end
+    elsif candidate['common_names'].empty? && candidate['aliases'].empty? && candidate['units'].empty? && formal_match
+      skipped += 1
+    else
+      supplement_foods << candidate
+      formal_match ? updated += 1 : added += 1
+    end
+  end
+  supplement['schema_version'] = 1
+  supplement['updated_at'] = Time.now.strftime('%Y-%m-%d %H:%M:%S')
+  supplement['foods'] = supplement_foods
+  write_food_knowledge_supplement(supplement) if added.positive? || updated.positive?
+  { 'added' => added, 'updated' => updated, 'skipped' => skipped, 'total' => supplement_foods.length }
 end
 
 def json_response(res, status, body)
@@ -580,11 +718,29 @@ def new_id(prefix)
   "#{prefix}-#{Time.now.to_i}-#{rand(1000..9999)}"
 end
 
+def normalize_ai_inventory_item(item, today)
+  name = item['name'].to_s.strip
+  return nil if name.empty?
+  freshness = %w[新鲜 尽快食用 不宜食用].include?(item['freshness']) ? item['freshness'] : '新鲜'
+  allowed_categories = %w[蔬菜 菌菇 水果 肉类 蛋类 海鲜 谷物杂粮 豆制品 乳制品 烘焙 其他]
+  {
+    'name' => name[0, 60],
+    'aliases' => Array(item['aliases']).map { |alias_name| alias_name.to_s.strip[0, 60] }.reject(&:empty?).first(8),
+    'categoryTag' => allowed_categories.include?(item['categoryTag'].to_s) ? item['categoryTag'].to_s : '其他',
+    'quantity' => [item['quantity'].to_f, 0.1].max,
+    'unit' => item['unit'].to_s.strip.empty? ? '个' : item['unit'].to_s.strip[0, 20],
+    'estimatedGrams' => [item['estimatedGrams'].to_f, 0].max.round,
+    'location' => item['location'] == '冷冻' ? '冷冻' : '冷藏',
+    'purchaseDate' => item['purchaseDate'].to_s.match?(/\A\d{4}-\d{2}-\d{2}\z/) ? item['purchaseDate'] : today,
+    'freshness' => freshness
+  }
+end
+
 def parse_inventory_with_deepseek(text)
   api_key = ENV['DEEPSEEK_API_KEY']
   raise '未找到 DEEPSEEK_API_KEY，请先配置。' if api_key.to_s.empty?
   today = Time.now.strftime('%Y-%m-%d')
-  prompt = "你处理的是家庭冰箱场景：食材通常已经历采摘或生产、运输、仓储和零售，新鲜度不能按果园刚采摘或刚生产计算。把用户文字拆成清单，只返回JSON：{\"items\":[{\"name\":\"食材名\",\"quantity\":1,\"unit\":\"个\",\"estimatedGrams\":150,\"location\":\"冷藏\",\"purchaseDate\":\"#{today}\",\"freshness\":\"新鲜\"}]}。结合食材性质、冷藏或冷冻、存入日期与今天#{today}判断freshness，只能是新鲜、尽快食用、不宜食用；要按家庭冰箱剩余可食用期保守判断。estimatedGrams为总重量估计。缺少数量默认1，缺少单位用常用家庭单位，缺少位置默认冷藏，缺少日期默认#{today}。最多20条，不输出解释或Markdown。"
+  prompt = "你处理的是家庭冰箱场景：食材通常已经历采摘或生产、运输、仓储和零售，新鲜度不能按果园刚采摘或刚生产计算。把用户文字拆成清单，只返回JSON：{\"items\":[{\"name\":\"标准食材名\",\"aliases\":[\"常用别名\"],\"categoryTag\":\"蔬菜\",\"quantity\":1,\"unit\":\"个\",\"estimatedGrams\":150,\"location\":\"冷藏\",\"purchaseDate\":\"#{today}\",\"freshness\":\"新鲜\"}]}。categoryTag只能是蔬菜、菌菇、水果、肉类、蛋类、海鲜、谷物杂粮、豆制品、乳制品、烘焙、其他之一；aliases只列确定的常用叫法，不确定时返回空数组。结合食材性质、冷藏或冷冻、存入日期与今天#{today}判断freshness，只能是新鲜、尽快食用、不宜食用；要按家庭冰箱剩余可食用期保守判断。estimatedGrams为总重量估计。缺少数量默认1，缺少单位用常用家庭单位，缺少位置默认冷藏，缺少日期默认#{today}。最多20条，不输出解释或Markdown。"
   uri = URI('https://api.deepseek.com/chat/completions')
   http = Net::HTTP.new(uri.host, uri.port)
   http.use_ssl = true
@@ -599,12 +755,7 @@ def parse_inventory_with_deepseek(text)
   payload = JSON.parse(response.body)
   raise(payload.dig('error', 'message') || "DeepSeek 请求失败（#{response.code}）") unless response.is_a?(Net::HTTPSuccess)
   result = JSON.parse(payload.dig('choices', 0, 'message', 'content').to_s)
-  items = Array(result['items']).first(20).map do |item|
-    name = item['name'].to_s.strip
-    next if name.empty?
-    freshness = %w[新鲜 尽快食用 不宜食用].include?(item['freshness']) ? item['freshness'] : '新鲜'
-    { 'name' => name, 'quantity' => [item['quantity'].to_f, 0.1].max, 'unit' => item['unit'].to_s.strip.empty? ? '个' : item['unit'].to_s.strip, 'estimatedGrams' => [item['estimatedGrams'].to_f, 0].max.round, 'location' => item['location'] == '冷冻' ? '冷冻' : '冷藏', 'purchaseDate' => item['purchaseDate'].to_s.match?(/\A\d{4}-\d{2}-\d{2}\z/) ? item['purchaseDate'] : today, 'freshness' => freshness }
-  end.compact
+  items = Array(result['items']).first(20).map { |item| normalize_ai_inventory_item(item, today) }.compact
   raise '没有识别到食材，请换一种说法。' if items.empty?
   { 'items' => items }
 rescue Net::OpenTimeout, Net::ReadTimeout
@@ -621,7 +772,7 @@ def recognize_inventory_photo(image_data)
   raise '图片格式不支持。' unless image_data.to_s.match?(%r{\Adata:image/(jpeg|png|gif|webp);base64,}i)
   raise '图片过大，请选择 8MB 以内的图片。' if image_data.bytesize > 11_000_000
   today = Time.now.strftime('%Y-%m-%d')
-  prompt = "这是家庭冰箱食材录入：图片里的食材通常已经历采摘或生产、运输、仓储和零售，不能按刚采摘状态判断新鲜度。识别食材并只返回JSON：{\"items\":[{\"name\":\"食材名\",\"quantity\":1,\"unit\":\"个\",\"estimatedGrams\":150,\"location\":\"冷藏\",\"purchaseDate\":\"#{today}\",\"freshness\":\"新鲜\"}]}。结合食材性质、可见外观状态、冷藏或冷冻条件和日期，保守判断家庭冰箱剩余可食用期；freshness只能是新鲜、尽快食用、不宜食用。无法判断数量默认1、单位用常用家庭单位、位置默认冷藏、日期默认#{today}。不要把餐具或包装袋识别为食材，最多20条，不输出解释或Markdown。"
+  prompt = "这是家庭冰箱食材录入：图片里的食材通常已经历采摘或生产、运输、仓储和零售，不能按刚采摘状态判断新鲜度。识别食材并只返回JSON：{\"items\":[{\"name\":\"标准食材名\",\"aliases\":[\"常用别名\"],\"categoryTag\":\"蔬菜\",\"quantity\":1,\"unit\":\"个\",\"estimatedGrams\":150,\"location\":\"冷藏\",\"purchaseDate\":\"#{today}\",\"freshness\":\"新鲜\"}]}。categoryTag只能是蔬菜、菌菇、水果、肉类、蛋类、海鲜、谷物杂粮、豆制品、乳制品、烘焙、其他之一；aliases只列确定的常用叫法，不确定时返回空数组。结合食材性质、可见外观状态、冷藏或冷冻条件和日期，保守判断家庭冰箱剩余可食用期；freshness只能是新鲜、尽快食用、不宜食用。无法判断数量默认1、单位用常用家庭单位、位置默认冷藏、日期默认#{today}。不要把餐具或包装袋识别为食材，最多20条，不输出解释或Markdown。"
   uri = URI('https://api.deepseek.com/chat/completions')
   http = Net::HTTP.new(uri.host, uri.port)
   http.use_ssl = true
@@ -636,12 +787,7 @@ def recognize_inventory_photo(image_data)
   payload = JSON.parse(response.body)
   raise(payload.dig('error', 'message') || "DeepSeek 图片识别失败（#{response.code}）") unless response.is_a?(Net::HTTPSuccess)
   result = JSON.parse(payload.dig('choices', 0, 'message', 'content').to_s)
-  items = Array(result['items']).first(20).map do |item|
-    name = item['name'].to_s.strip
-    next if name.empty?
-    freshness = %w[新鲜 尽快食用 不宜食用].include?(item['freshness']) ? item['freshness'] : '新鲜'
-    { 'name' => name, 'quantity' => [item['quantity'].to_f, 0.1].max, 'unit' => item['unit'].to_s.strip.empty? ? '个' : item['unit'].to_s.strip, 'estimatedGrams' => [item['estimatedGrams'].to_f, 0].max.round, 'location' => item['location'] == '冷冻' ? '冷冻' : '冷藏', 'purchaseDate' => item['purchaseDate'].to_s.match?(/\A\d{4}-\d{2}-\d{2}\z/) ? item['purchaseDate'] : today, 'freshness' => freshness }
-  end.compact
+  items = Array(result['items']).first(20).map { |item| normalize_ai_inventory_item(item, today) }.compact
   raise '没有识别到可录入的食材，请换一张更清晰的图片。' if items.empty?
   { 'items' => items }
 rescue Net::OpenTimeout, Net::ReadTimeout
@@ -725,6 +871,14 @@ server.mount_proc '/' do |req, res|
       text = body && body['text'].to_s.strip
       raise '请输入需要放入冰箱的食材。' if text.empty?
       json_response(res, 200, parse_inventory_with_deepseek(text))
+      next
+    end
+
+    if req.path == '/api/food-knowledge/supplement' && req.request_method == 'POST'
+      body = request_json(req)
+      raise '知识补充数据格式错误。' unless body.is_a?(Hash) && body['items'].is_a?(Array)
+      result = KNOWLEDGE_MUTEX.synchronize { supplement_food_knowledge(body['items']) }
+      json_response(res, 200, result)
       next
     end
 
@@ -949,9 +1103,12 @@ server.mount_proc '/' do |req, res|
       next
     end
 
-    if req.path == '/' || req.path == '/index.html'
+    if req.path == '/food_knowledge.json'
+      json_response(res, 200, KNOWLEDGE_MUTEX.synchronize { merged_food_knowledge })
+      next
+    elsif req.path == '/' || req.path == '/index.html'
       file_path = File.join(ROOT, 'index.html')
-    elsif req.path.match?(%r{\A/(app\.js|recipes\.js|styles\.css|food_knowledge\.json|recipe\.html|recipe-app\.js|recipe-styles\.css|recipe-host\.js|recipe-host\.css|recipe-frame\.js|recipe-frame\.css)\z})
+    elsif req.path.match?(%r{\A/(app\.js|recipes\.js|styles\.css|recipe\.html|recipe-app\.js|recipe-styles\.css|recipe-host\.js|recipe-host\.css|recipe-frame\.js|recipe-frame\.css)\z})
       file_path = File.join(ROOT, req.path.sub(%r{\A/}, ''))
     elsif req.path.match?(%r{\A/assets/[a-zA-Z0-9_/-]+\.(?:jpg|png|webp|json)\z}) && !req.path.include?('..')
       file_path = File.join(ROOT, req.path.sub(%r{\A/}, ''))
