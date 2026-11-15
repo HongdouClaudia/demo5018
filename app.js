@@ -608,7 +608,7 @@ function profile(){
   return `<section class="profile-cover">
     <div class="profile-cover-top"><span class="profile-kicker">食光管家</span><button class="profile-more" aria-label="编辑个人资料" data-action="open-profile-settings">···</button></div>
     <div class="profile-person"><div class="profile-avatar">${profileAvatar}</div><div><h2>${esc(profileName)}</h2><p class="profile-signature">${esc(user.signature??'让每一餐都更合心意')}</p></div></div>
-    <div class="profile-summary"><div><b>${cooked}</b><span>完成烹饪</span></div><i></i><div><b>${favorites.length}</b><span>收藏菜谱</span></div><i></i><div><b>${p.reminder?'已开启':'未开启'}</b><span>临期提醒</span></div></div>
+    <div class="profile-summary"><div><b>${cooked}</b><span>完成烹饪</span></div><i></i><div><b>${favorites.length}</b><span>收藏菜谱</span></div></div>
   </section>
   <section class="profile-preferences-card">
     <div class="profile-card-heading"><div><span class="profile-icon">✦</span><div><h2>偏好记忆</h2><p>这些信息会帮助管家安排更适合你的菜谱</p></div></div><button data-action="edit-preferences">编辑</button></div>
