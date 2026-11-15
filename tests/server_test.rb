@@ -6,6 +6,7 @@ require 'ostruct'
 require 'minitest/autorun'
 TASK_TMP = Dir.mktmpdir('recipe-test-')
 ENV['DATA_PATH'] = File.join(TASK_TMP, 'inventory.json')
+ENV['FOOD_KNOWLEDGE_SUPPLEMENT_PATH'] = File.join(TASK_TMP, 'food_knowledge_supplement.json')
 class InProcessServer
   attr_accessor :handler
   def mount_proc(_path, &block); @handler = block; end
@@ -73,6 +74,7 @@ class RecipeServerTest < Minitest::Test
   end
   def setup
     File.write(DATA_PATH, File.read(SEED_PATH))
+    File.delete(FOOD_KNOWLEDGE_SUPPLEMENT_PATH) if File.exist?(FOOD_KNOWLEDGE_SUPPLEMENT_PATH)
   end
   def call(path, body = nil, method = 'POST')
     req = OpenStruct.new(path: path, request_method: method, body: JSON.generate(body))
@@ -98,6 +100,31 @@ class RecipeServerTest < Minitest::Test
     assert_equal 'bought', result['shopping'].find { |item| item['id']=='unknown' }['status']
     assert_equal 'bought', result['shopping'].find { |item| item['id']=='vague' }['status']
     assert_equal 'archived', result['shopping'].find { |item| item['id']=='known' }['status']
+  end
+
+  def test_ai_confirmed_knowledge_only_supplements_and_never_overwrites_formal_values
+    items = [
+      {'name'=>'番茄','aliases'=>['红果'],'categoryTag'=>'肉类','quantity'=>2,'unit'=>'个','estimatedGrams'=>1998,'location'=>'冷冻'},
+      {'name'=>'罗马花椰菜','aliases'=>['宝塔菜'],'categoryTag'=>'蔬菜','quantity'=>1,'unit'=>'颗','estimatedGrams'=>500,'location'=>'冷藏'}
+    ]
+    status, result = call('/api/food-knowledge/supplement', {'items'=>items})
+    assert_equal 200, status
+    assert_equal 1, result['added']
+    assert_equal 1, result['updated']
+
+    req = OpenStruct.new(path:'/food_knowledge.json',request_method:'GET',body:'')
+    res = WEBrick::HTTPResponse.new(WEBrick::Config::HTTP)
+    TEST_SERVER.handler.call(req,res)
+    knowledge = JSON.parse(res.body)
+    tomato = knowledge['foods'].find { |food| food['canonical_name']=='西红柿' }
+    assert_equal '蔬菜', tomato['category_tag']
+    assert_equal 150.0, tomato['units']['个']
+    assert_includes tomato['common_names'], '红果'
+    romanesco = knowledge['foods'].find { |food| food['canonical_name']=='罗马花椰菜' }
+    assert_equal '蔬菜', romanesco['category_tag']
+    assert_equal 500.0, romanesco['units']['颗']
+    assert_equal 'refrigerated', romanesco['default_storage']
+    refute romanesco.key?('freshness_standard')
   end
   def test_serpapi_search_returns_safe_source_and_keeps_key_private
     previous = ENV['IMAGE_API_KEY']
