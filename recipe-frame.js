@@ -15,12 +15,17 @@ window.recipeFrameReady = () => {
     });
   });
   let refreshing = Promise.resolve();
-  const reloadSharedState = () => {
+  const reloadSharedState = (openedAt) => {
     refreshing = refreshing.catch(()=>{}).then(async () => {
+      await menuEditQueue;
       await persistenceQueue;
       const latest = await api('/api/state');
       state = latest;
       ensurePlan();
+      if (openedAt) {
+        recommendationError = recommendationNotice = '';
+        syncMealOnOpen(openedAt);
+      } else clearOtherMealResults(effectiveMeal());
       render();
     });
     return refreshing;
@@ -38,12 +43,20 @@ window.recipeFrameReady = () => {
           recommendationLoading = false;
         }
         await refreshing;
+        await menuEditQueue;
         await persistenceQueue;
         send('flushed', {id:message.id});
       } else if (message.type === 'refresh' || message.type === 'activate') {
-        if (message.type === 'activate') returnTab = message.returnTab || null;
-        await reloadSharedState();
+        if (message.type === 'activate') {
+          returnTab = message.returnTab || null;
+          if (!message.reopened) { render(); syncHomeReturn(); return; }
+        }
+        await reloadSharedState(message.reopened ? new Date() : null);
         syncHomeReturn();
+        if (message.reopened && recipeScreen === 'browse' && recipeSection === 'discover' &&
+            !currentDetailId && !recommendationLoading && !mealPlan.results.length) {
+          void refreshRecommendations();
+        }
       } else if (message.type === 'open-detail') {
         await refreshing;
         returnTab = message.returnTab || returnTab;

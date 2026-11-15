@@ -65,13 +65,14 @@
     }
     const recipeView = currentTab === 'recipes';
     document.body.classList.toggle('recipe-view', recipeView);
+    const enteringRecipes = recipeView && host.hidden;
     host.hidden = !recipeView;
     header.hidden = recipeView;
     app.hidden = recipeView;
     if (recipeView) {
       stopCamera();
       mount();
-      send('activate', {returnTab});
+      if (enteringRecipes && frameReady) send('activate', {returnTab, reopened:true});
       sendDetail();
       document.querySelectorAll('.nav-item').forEach(button => button.classList.toggle('active', button.dataset.tab === 'recipes'));
     } else mainRender();

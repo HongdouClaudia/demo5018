@@ -191,40 +191,63 @@ class RecipeServerTest < Minitest::Test
         response.body = JSON.generate(choices:[{message:{content:JSON.generate(result)}}]);response
       end
     end
-    status, result = Net::HTTP.stub(:new,client) { call('/api/recipe-import/parse',{sourceText:'番茄2个，盐适量。切番茄，炒熟鸡蛋后加入番茄。'}) }
+    status, result = Net::HTTP.stub(:new,client) { call('/api/recipe-import/parse',{sourceText:'番茄2个，盐适量。切番茄，炒熟鸡蛋后加入番茄。 https://example.com/recipe'}) }
     assert_equal 200,status
     assert_equal '番茄炒蛋',result['title']
     assert_equal 2,result['steps'].length
     assert_nil result['ingredients'][1]['quantity']
     assert_nil result['duration']
     assert_equal 'json_object',client.body['response_format']['type']
+    assert_equal '番茄2个，盐适量。切番茄，炒熟鸡蛋后加入番茄。', client.body['messages'].last['content']
     refute_includes JSON.generate(result),'test-key'
   ensure
     ENV['DEEPSEEK_API_KEY'] = previous
   end
-  def test_import_rejects_local_and_unsupported_url
-    previous = ENV['DEEPSEEK_API_KEY']; ENV['DEEPSEEK_API_KEY'] = 'test-key'
-    status, result = call('/api/recipe-import/parse',{sourceUrl:'http://127.0.0.1/private'})
-    assert_equal 422,status
-    assert_match(/HTTPS/,result['error'])
-    status, result = call('/api/recipe-import/parse',{sourceUrl:'https://example.com/recipe'})
-    assert_equal 422,status
-    assert_match(/粘贴菜谱正文/,result['error'])
-  ensure
-    ENV['DEEPSEEK_API_KEY'] = previous
-  end
-  def test_import_link_rejects_private_addresses
-    error = Resolv.stub(:getaddresses, ['127.0.0.1']) { assert_raises(RuntimeError) { fetch_recipe_text('https://xhslink.com/test') } }
-    assert_match(/无法安全读取/, error.message)
-  end
-  def test_import_does_not_treat_short_share_text_as_recipe_when_link_unavailable
-    previous = ENV['DEEPSEEK_API_KEY']; ENV['DEEPSEEK_API_KEY'] = 'test-key'
-    error = stub(:fetch_recipe_text, ->(_url) { raise '链接无法读取' }) do
-      assert_raises(RuntimeError) { parse_imported_recipe({'sourceUrl'=>'https://xhslink.com/test','sourceText'=>'来看这个 https://xhslink.com/test'}) }
+  def test_favorite_cover_saves_jpeg_for_the_link_card
+    original_key = ENV['OPENAI_IMAGE_API_KEY']
+    ENV['OPENAI_IMAGE_API_KEY'] = 'image-test-key'
+    jpeg = File.binread(File.expand_path('../assets/recipes/tomato-egg.jpg', __dir__))
+    client = Object.new
+    class << client
+      attr_accessor :use_ssl, :verify_mode, :open_timeout, :read_timeout, :payload, :path, :jpeg
+      def request(request)
+        self.payload = JSON.parse(request.body)
+        self.path = request.path
+        response = Net::HTTPOK.new('1.1', '200', 'OK')
+        response.instance_variable_set(:@read, true)
+        response.body = JSON.generate(data: [{b64_json: Base64.strict_encode64(jpeg)}])
+        response
+      end
     end
-    assert_equal '链接无法读取', error.message
+    client.jpeg = jpeg
+    status, result = Net::HTTP.stub(:new, client) do
+      call('/api/favorite-cover', {title:'番茄炒蛋', sourceUrl:'https://xhslink.com/example'})
+    end
+    assert_equal 200, status
+    assert_equal '/v1/images/generations', client.path
+    assert_includes client.payload['prompt'], '番茄炒蛋'
+    refute_includes JSON.generate(client.payload), 'xhslink.com'
+    req = OpenStruct.new(path:result['imageUrl'], request_method:'GET')
+    res = WEBrick::HTTPResponse.new(WEBrick::Config::HTTP)
+    TEST_SERVER.handler.call(req, res)
+    assert_equal 200, res.status
+    assert_equal jpeg, res.body
   ensure
-    ENV['DEEPSEEK_API_KEY'] = previous
+    ENV['OPENAI_IMAGE_API_KEY'] = original_key
+  end
+
+  def test_import_link_only_requests_prompt_to_open_platform_without_fetching
+    unexpected_http = ->(*) { flunk 'A link-only request must not start an HTTP request' }
+    Net::HTTP.stub(:new, unexpected_http) do
+      ['https://xhslink.com/example', 'https://v.douyin.com/example/'].each do |url|
+        status, result = call('/api/recipe-import/parse', {sourceUrl: url})
+        assert_equal 422, status
+        assert_match(/原平台打开/, result['error'])
+      end
+      status, result = call('/api/recipe-import/parse', {sourceText: 'https://xhslink.com/example'})
+      assert_equal 422, status
+      assert_match(/菜谱正文/, result['error'])
+    end
   end
   def test_connection_refused_has_clear_error
     previous = ENV['DEEPSEEK_API_KEY']
@@ -288,6 +311,46 @@ class RecipeServerTest < Minitest::Test
     assert_equal 422, call('/api/cook', body.merge(operationId:'duplicate-purchase',additions:[addition.merge('id'=>'other-batch')])).first
     assert_equal 200, call('/api/cook/undo', {operationId:'new'}).first
     assert_nil stock('new-batch')
+  end
+  def test_used_purchase_does_not_sync_the_original_quantity_and_can_be_undone
+    state = read_state
+    purchase = {'id'=>'fresh-eggs', 'name'=>'鸡蛋', 'unit'=>'个', 'quantity'=>6, 'status'=>'bought'}
+    state['shopping'] << purchase
+    write_state(state)
+    body = {operationId:'external-only', externalConsumption:[
+      {name:'鸡蛋', unit:'个', quantity:2, remaining:0, basis:'estimated', purchaseId:purchase['id'], expectedPurchase:purchase}
+    ]}
+    before = stock
+    assert_equal 200, call('/api/cook', body).first
+    assert_equal 200, call('/api/cook', body).first
+    assert_equal 'archived', read_state['shopping'].find { |item| item['id'] == purchase['id'] }['status']
+    assert_equal 200, call('/api/sync-shopping', {ids:[purchase['id']]}).first
+    assert_equal before, stock
+    refute read_state['inventory'].any? { |item| item['sourceShoppingId'] == purchase['id'] }
+    assert_equal 200, call('/api/cook/undo', {operationId:'external-only'}).first
+    assert_equal purchase, read_state['shopping'].find { |item| item['id'] == purchase['id'] }
+  end
+  def test_external_leftover_can_be_recorded_without_a_quantity_when_not_stocking
+    line = {name:'番茄', unit:'个', quantity:2, remaining:nil, hasRemaining:true, basis:'estimated'}
+    before = read_state['inventory']
+    assert_equal 200, call('/api/cook', {operationId:'external-remaining', externalConsumption:[line]}).first
+    assert_equal before, read_state['inventory']
+    recorded = read_state['history'].last['externalConsumption'].first
+    assert_equal true, recorded['hasRemaining']
+    assert_nil recorded['remaining']
+    assert_equal 422, call('/api/cook', {operationId:'invalid-remaining', externalConsumption:[line.merge(hasRemaining:false)]}).first
+  end
+  def test_unattributed_leftover_adds_only_new_stock_and_rejects_existing_stock
+    line = {name:'嫩豆腐', unit:'克', remaining:100, hasRemaining:true}
+    addition = {id:'tofu-leftover', name:'嫩豆腐', unit:'克', quantity:100, origin:'meal-leftover'}
+    body = {operationId:'unattributed-leftover', unattributedLeftovers:[line], additions:[addition]}
+    assert_equal 200, call('/api/cook', body).first
+    assert_equal 100, stock('tofu-leftover')['quantity']
+    assert_empty read_state['history'].last['externalConsumption']
+    assert_equal 100, read_state['history'].last['unattributedLeftovers'].first['remaining']
+    assert_equal 422, call('/api/cook', body.merge(operationId:'other', additions:[addition.merge(id:'duplicate')])).first
+    assert_equal 200, call('/api/cook/undo', {operationId:'unattributed-leftover'}).first
+    assert_nil stock('tofu-leftover')
   end
   def test_mixed_source_uses_only_explicit_old_amount
     assert_equal 200, cook('mixed',stock('inv-chicken'),100,quantityBasis:'confirmed').first

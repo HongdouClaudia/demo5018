@@ -5,11 +5,11 @@ const path=require('node:path');
 const root=path.resolve(__dirname,'..');
 const messages=[],handlers={};
 const element=()=>({hidden:false,innerHTML:'',textContent:'',classList:{toggle(){}},append(child){this.child=child;},contentWindow:{postMessage(message,origin){messages.push({message,origin});}}});
-const shell=element(),label=element(),header=element(),app=element();
+const shell=element(),label=element(),header=element(),app=element(),modalLayer=element();
 const document={body:element(),createElement:element,querySelector(selector){return selector==='.phone-shell'?shell:label;},querySelectorAll(){return [];},addEventListener(type,fn){handlers[type]=fn;}};
 const events={};
-const c=vm.createContext({document,header,app,window:{addEventListener(type,fn){events[type]=fn;}},location:{origin:'http://localhost:4581',hash:'#home'},history:{replaceState(){}},setTimeout,clearTimeout,console});
-vm.runInContext(`let currentTab='home',state={revision:1,profile:{name:'测试用户'}},selectedRecipe=null,returnTab=null,inventoryEntryView=null,photoPreviewUrl='';let mainRenders=0,mainSaves=0;function render(){mainRenders++;}async function persist(){mainSaves++;}async function api(){return {revision:2,profile:{name:'测试用户'},inventory:[{id:'egg',quantity:4}]};}function stopCamera(){}function toast(message){throw new Error(message);}`,c);
+const c=vm.createContext({document,header,app,modalLayer,window:{addEventListener(type,fn){events[type]=fn;}},location:{origin:'http://localhost:4581',hash:'#home'},history:{replaceState(){}},setTimeout,clearTimeout,console});
+vm.runInContext(`let currentTab='home',state={revision:1,profile:{name:'测试用户'}},selectedRecipe=null,returnTab=null,inventoryEntryView=null,photoPreviewUrl='';let mainRenders=0,mainSaves=0;function render(){mainRenders++;}async function persist(){mainSaves++;}async function api(){return {revision:2,profile:{name:'测试用户'},inventory:[{id:'egg',quantity:4}]};}function stopCamera(){}function closeModal(){modalLayer.hidden=true;}function toast(message){throw new Error(message);}`,c);
 const run=source=>vm.runInContext(source,c);
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 async function main(){
@@ -20,7 +20,7 @@ async function main(){
  assert.equal(frame.src,'/recipe.html');assert.equal(app.hidden,true);assert.equal(header.hidden,true);
  run('render()');assert.equal(shell.child.child,frame,'Never remount the cooking document during navigation');
  await events.message({origin:'https://evil.example',source:frame.contentWindow,data:{channel:'demo5018-recipes',type:'ready'}});
- assert.equal(messages.length,2,'Wrong-origin ready must not cause activation');
+ assert.equal(messages.length,0,'Wrong-origin ready must not cause activation');
  await events.message({origin:c.location.origin,source:frame.contentWindow,data:{channel:'demo5018-recipes',type:'ready'}});
  assert.equal(messages.at(-1).message.type,'activate');
  events.message({origin:c.location.origin,source:frame.contentWindow,data:{channel:'demo5018-recipes',type:'navigate',tab:'inventory'}});
@@ -32,6 +32,20 @@ async function main(){
  await tick();assert.equal(run('currentTab'),'inventory');assert.equal(run('state.inventory[0].quantity'),4);
  assert.equal(app.hidden,false);assert.equal(header.hidden,false);assert.equal(shell.child.hidden,true);
  await run('persist()');assert.equal(run('mainSaves'),1);assert.equal(messages.at(-1).message.type,'refresh');
+ run("currentTab='recipes';render()");
+ assert.equal(messages.at(-1).message.type,'activate');
+ assert.equal(messages.at(-1).message.reopened,true);
+ const messageCount=messages.length;
+ run('render()');
+ assert.equal(messages.length,messageCount,'A render within the recipe page must not reset the meal');
+ run("currentTab='home';render()");
+ const homeRecipe={dataset:{action:'open-recipe',id:'recipe-test'},closest(){return this;}};
+ handlers.click({target:homeRecipe,preventDefault(){},stopImmediatePropagation(){}});
+ assert.equal(run('currentTab'),'recipes');
+ assert.equal(modalLayer.hidden,true);
+ assert.deepEqual(messages.slice(-2).map(({message})=>[message.type,message.returnTab]),
+   [['activate','home'],['open-detail','home']]);
+ assert.equal(messages.at(-1).message.recipeId,'recipe-test');
  console.log('PASS: recipe isolation, trusted message boundary, progress flush and shared inventory refresh.');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});
