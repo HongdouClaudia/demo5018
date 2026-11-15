@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-11-15 01:32:56",
+  "foods": [
+    {
+      "id": "supplement-04e983910437",
+      "name": "馒头",
+      "canonical_name": "馒头",
+      "common_names": [
+        "馒头",
+        "馍",
+        "馍馍"
+      ],
+      "aliases": [
+        "馍",
+        "馍馍"
+      ],
+      "category": "谷物杂粮",
+      "category_tag": "谷物杂粮",
+      "category_tags": [
+        "谷物杂粮"
+      ],
+      "icon": "🍽️",
+      "units": {
+        "个": 100.0
+      },
+      "default_storage": "refrigerated",
+      "knowledge_source": "ai_user_confirmed",
+      "confirmed_at": "2026-11-15 01:32:56"
+    }
+  ]
+}
