@@ -151,7 +151,19 @@
 
 /* Homepage recommendation purchase review */
 .home-page .agent-result .recipe-scroll{display:flex;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x proximity;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
-.home-page .agent-result .recipe-card{flex:0 0 min(68%,250px);width:min(68%,250px);scroll-snap-align:start}
+.home-page .recipe-scroll{display:flex;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x proximity;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
+.home-page .recipe-card,.home-page .agent-result .recipe-card{flex:0 0 178px;width:178px;scroll-snap-align:start}
+.home-page .daily-recommendation-scroll{margin-bottom:2px}
+.dinner-wheel-entry{display:block;margin:0 auto 4px;border:0;background:transparent;color:var(--brand);font-size:13px;font-weight:650;padding:8px 12px;cursor:pointer}
+.dinner-wheel-modal{text-align:center}
+.dinner-wheel-copy{font-size:12px;line-height:1.55;color:var(--sub);margin:-7px 0 16px}
+.dinner-wheel{width:230px;height:230px;margin:8px auto 14px;border-radius:50%;position:relative;background:conic-gradient(#f6b69d 0 25%,#f4d28d 25% 50%,#a8cfb4 50% 75%,#a9c3e5 75% 100%);border:8px solid #fff;box-shadow:0 0 0 1px var(--line),0 12px 28px rgba(70,47,31,.12);transition:transform .85s cubic-bezier(.2,.75,.25,1)}
+.dinner-wheel.spinning{transform:rotate(765deg)}
+.dinner-wheel>button{position:absolute;inset:50% auto auto 50%;transform:translate(-50%,-50%);width:70px;height:70px;border-radius:50%;border:6px solid rgba(255,255,255,.8);background:var(--brand);color:white;font-weight:700;box-shadow:0 3px 10px rgba(70,47,31,.2);z-index:2}
+.wheel-option{position:absolute;font-size:11px;font-weight:650;color:#59483f}
+.option-one{top:35px;right:40px}.option-two{right:35px;bottom:42px}.option-three{left:35px;bottom:42px}.option-four{top:35px;left:40px}
+.wheel-pointer{position:absolute;top:-17px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:10px solid transparent;border-right:10px solid transparent;border-top:22px solid var(--brand);z-index:3}
+.dinner-wheel-result{min-height:20px;font-size:12px;color:var(--sub);margin:0}
 .home-recommendation-next{display:flex;flex-direction:column;gap:8px}
 .home-recommendation-next .secondary-button{width:100%}
 .recommendation-shopping-modal>.meta{margin:-8px 0 12px}
