@@ -28,6 +28,7 @@ let manualEntrySearch = '';
 let manualEntryCart = [];
 let manualEntryFlightOrigin = null;
 let manualCartExpanded = false;
+let homeContext={city:'',province:'',region:'',weather:'',temperature:null,weatherIcon:'📍',loading:true,error:false};
 
 const icons = {番茄:'🍅',鸡蛋:'🥚',鸡胸肉:'🍗',西兰花:'🥦',大米:'🍚',胡萝卜:'🥕',生抽:'🥣',牛奶:'🥛',香蕉:'🍌'};
 const esc = (value='') => String(value).replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
@@ -119,7 +120,69 @@ async function api(url, options={}) {
   return data;
 }
 
-async function loadState(){const [saved,knowledge]=await Promise.all([api('/api/state'),api('/food_knowledge.json')]);state=saved;foodKnowledge=knowledge.foods||[];const merged=mergeInventoryItems(state.inventory||[]);state.inventory=merged.items;if(merged.changed)await persist();render();}
+const weatherLabels={0:['☀️','晴'],1:['🌤️','大致晴朗'],2:['⛅','多云'],3:['☁️','阴'],45:['🌫️','有雾'],48:['🌫️','雾凇'],51:['🌦️','小毛毛雨'],53:['🌦️','毛毛雨'],55:['🌧️','较强毛毛雨'],61:['🌦️','小雨'],63:['🌧️','中雨'],65:['🌧️','大雨'],71:['🌨️','小雪'],73:['❄️','中雪'],75:['❄️','大雪'],80:['🌦️','阵雨'],81:['🌧️','较强阵雨'],82:['⛈️','强阵雨'],95:['⛈️','雷雨'],96:['⛈️','雷雨伴冰雹'],99:['⛈️','强雷雨伴冰雹']};
+function chineseFestival(date=new Date()){
+  const fixed={"1-1":'元旦',"5-1":'劳动节',"10-1":'国庆节'}[`${date.getMonth()+1}-${date.getDate()}`];
+  if(fixed)return fixed;
+  try{
+    const parts=new Intl.DateTimeFormat('en-u-ca-chinese',{month:'numeric',day:'numeric'}).formatToParts(date);
+    const month=Number(parts.find(part=>part.type==='month')?.value),day=Number(parts.find(part=>part.type==='day')?.value);
+    return {'1-1':'春节','1-15':'元宵节','5-5':'端午节','7-7':'七夕节','8-15':'中秋节','9-9':'重阳节','12-8':'腊八节'}[`${month}-${day}`]||'';
+  }catch{return '';}
+}
+const solarTermNames=['小寒','大寒','立春','雨水','惊蛰','春分','清明','谷雨','立夏','小满','芒种','夏至','小暑','大暑','立秋','处暑','白露','秋分','寒露','霜降','立冬','小雪','大雪','冬至'];
+const solarTermConstants=[5.4055,20.12,3.87,18.73,5.63,20.646,4.81,20.1,5.52,21.04,5.678,21.37,7.108,22.83,7.5,23.13,7.646,23.042,8.318,23.438,7.438,22.36,7.18,21.94];
+function solarTermFor(date=new Date()){
+  const year=date.getFullYear(),shortYear=year%100,terms=[];
+  solarTermNames.forEach((name,index)=>{const month=Math.floor(index/2);const day=Math.floor(shortYear*.2422+solarTermConstants[index])-Math.floor((shortYear-1)/4);terms.push({name,date:new Date(year,month,day)});});
+  const previous=[...terms].reverse().find(term=>term.date<=date)||{name:'冬至',date:new Date(year-1,11,21)};
+  return previous.name;
+}
+function regionForPlace(place=''){
+  if(/黑龙江|吉林|辽宁|东北/.test(place))return '东北';
+  if(/北京|天津|河北|山东|山西|内蒙古/.test(place))return '华北';
+  if(/上海|江苏|浙江|安徽|福建|江西/.test(place))return '华东';
+  if(/广东|广西|海南|香港|澳门/.test(place))return '华南';
+  if(/河南|湖北|湖南/.test(place))return '华中';
+  if(/四川|重庆|云南|贵州|西藏/.test(place))return '西南';
+  if(/陕西|甘肃|宁夏|青海|新疆/.test(place))return '西北';
+  return '';
+}
+function geoPosition(){return new Promise((resolve,reject)=>{if(!navigator.geolocation)return reject(new Error('浏览器不支持定位'));navigator.geolocation.getCurrentPosition(resolve,reject,{enableHighAccuracy:false,timeout:6500,maximumAge:30*60*1000});});}
+async function weatherAt(latitude,longitude){
+  const weatherData=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,weather_code&timezone=auto`).then(response=>{if(!response.ok)throw new Error('天气服务暂不可用');return response.json();});
+  const code=Number(weatherData?.current?.weather_code),weather=weatherLabels[code]||['🌡️','实时天气'];
+  return {weather:weather[1],weatherIcon:weather[0],temperature:Number.isFinite(Number(weatherData?.current?.temperature_2m))?Math.round(Number(weatherData.current.temperature_2m)):null};
+}
+function saveHomeContext(next){homeContext={...homeContext,...next,loading:false,error:false,savedAt:Date.now()};localStorage.setItem('home-context-cache',JSON.stringify(homeContext));if(state&&currentTab==='home')render();}
+async function loadHomeContext(force=false){
+  if(!force){try{const cached=JSON.parse(localStorage.getItem('home-context-cache')||'null');if(cached){homeContext={...homeContext,...cached,loading:false,error:false};if(state&&currentTab==='home')render();return;}}catch{}}
+  if(!force&&localStorage.getItem('home-location-attempted')){homeContext={...homeContext,loading:false,error:true};if(state&&currentTab==='home')render();return;}
+  localStorage.setItem('home-location-attempted','1');
+  homeContext={...homeContext,loading:true,error:false};if(state&&currentTab==='home')render();
+  try{
+    let latitude,longitude,locationData;
+    try{const position=await geoPosition();latitude=position.coords.latitude;longitude=position.coords.longitude;}catch{}
+    const locationUrl=latitude==null?'https://api.bigdatacloud.net/data/reverse-geocode-client?localityLanguage=zh':`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}&localityLanguage=zh`;
+    locationData=await fetch(locationUrl).then(response=>{if(!response.ok)throw new Error('定位服务暂不可用');return response.json();});
+    latitude=Number(latitude??locationData.latitude);longitude=Number(longitude??locationData.longitude);
+    const weather=Number.isFinite(latitude)&&Number.isFinite(longitude)?await weatherAt(latitude,longitude):{weather:'实时天气',weatherIcon:'🌡️',temperature:null};
+    const city=locationData.city||locationData.locality||locationData.principalSubdivision||'当前位置';
+    const province=locationData.principalSubdivision||'';
+    saveHomeContext({city,province,region:regionForPlace(`${province}${city}`),...weather,source:'auto'});
+  }catch{homeContext={...homeContext,loading:false,error:true,weatherIcon:'📍'};}
+  if(state&&currentTab==='home')render();
+}
+async function chooseChinaCity(name){
+  const query=String(name||'').trim();if(!query)throw new Error('请输入城市名称');
+  const url=`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=10&language=zh&format=json&countryCode=CN`;
+  const data=await fetch(url).then(response=>{if(!response.ok)throw new Error('城市查询失败');return response.json();});
+  const place=(data.results||[]).find(item=>item.country_code==='CN'||item.country==='中国');
+  if(!place)throw new Error('没有找到这个中国城市');
+  const weather=await weatherAt(place.latitude,place.longitude),city=place.name||query,province=place.admin1||'';
+  saveHomeContext({city,province,region:regionForPlace(`${province}${city}`),...weather,source:'manual'});
+}
+async function loadState(){const [saved,knowledge]=await Promise.all([api('/api/state'),api('/food_knowledge.json')]);state=saved;foodKnowledge=knowledge.foods||[];const merged=mergeInventoryItems(state.inventory||[]);state.inventory=merged.items;if(merged.changed)await persist();render();loadHomeContext();}
 async function persist(){state.inventory=mergeInventoryItems(state.inventory||[]).items;state=await api('/api/state',{method:'PUT',body:JSON.stringify({state})});}
 function toast(message){ toastNode.textContent=message; toastNode.classList.add('show'); setTimeout(()=>toastNode.classList.remove('show'),2600); }
 function headerContent(){
@@ -128,6 +191,14 @@ function headerContent(){
   if(currentTab==='inventory'&&inventoryEntryView){title=inventoryEntryView==='manual'?'手动录入':'拍照录入';sub='食材录入';}
   if(currentTab==='inventory'&&inventoryEntryView==='manual'){
     header.innerHTML=`<div class="manual-entry-header-row"><button class="manual-header-back" data-action="back-to-inventory">‹ 返回冰箱</button></div><div class="manual-entry-title-row"><h1>食材录入</h1><button class="manual-header-custom" data-action="open-ai-entry">✦ AI录入</button></div>`;
+    return;
+  }
+  if(currentTab==='home'){
+    const now=new Date(),festival=chineseFestival(now),rawName=String(state?.profile?.name||'朋友').trim();
+    const name=/厨房|用户/.test(rawName)?'朋友':rawName;
+    const dateText=`今天是${now.getMonth()+1}月${now.getDate()}日！${festival?`是${festival}！`:''}`;
+    const weatherDetail=homeContext.loading?'正在定位…':homeContext.error?'点击重新定位':`${homeContext.weatherIcon} ${esc(homeContext.weather)}${homeContext.temperature===null?'':` ${homeContext.temperature}°`}`;
+    header.innerHTML=`<div class="home-header"><div class="home-brand"><p class="eyebrow">今天，先吃掉家里的好食材</p><h1>食光管家</h1></div><button type="button" class="home-weather" data-action="open-city-location" aria-label="修改城市定位"><strong>您好，${esc(name)}！</strong><small>${dateText}</small><span>⌖ ${esc(homeContext.city||'当前位置')} · ${weatherDetail}</span></button></div>`;
     return;
   }
   const headerAction=currentTab==='inventory'&&inventoryEntryView?'<button class="header-back-action" data-action="back-to-inventory">‹ 返回冰箱</button>':currentTab==='recipes'&&returnTab==='profile'&&!selectedRecipe?'<button class="header-back-action" data-action="back-to-profile">‹ 返回我的</button>':'';
@@ -363,6 +434,22 @@ function recentConsumptionByGroup(days=14){
   }
   return totals;
 }
+function seasonalDishTip(){
+  const term=solarTermFor(new Date()),region=homeContext.region||'',city=homeContext.city||'';
+  const north=['东北','华北','西北'].includes(region),south=['华东','华南','西南'].includes(region);
+  const index=solarTermNames.indexOf(term),season=index>=2&&index<=7?'spring':index>=8&&index<=13?'summer':index>=14&&index<=19?'autumn':'winter';
+  const choices={
+    spring:north?['韭菜鸡蛋','菠菜豆腐汤']:['春笋炒肉','荠菜鸡蛋羹'],
+    summer:north?['凉拌黄瓜','冬瓜丸子汤']:['冬瓜薏米汤','清蒸时蔬'],
+    autumn:north?['莲藕排骨汤','南瓜小米粥']:['山药木耳','莲藕炖鸡'],
+    winter:north?['白菜豆腐煲','萝卜炖牛肉']:['白萝卜排骨汤','菌菇青菜煲']
+  }[season];
+  const avoided=[...(state.preferences?.avoid||[]),...(state.preferences?.allergies||[])].map(String).filter(Boolean);
+  const dish=choices.find(item=>!avoided.some(food=>item.includes(food)))||'温热的时令蔬菜汤';
+  const place=city?`${city}`:north?'北方':south?'南方':'当地';
+  const weather=homeContext.temperature===null?'':homeContext.temperature<=10?'天气偏凉，':homeContext.temperature>=28?'天气偏热，':'';
+  return `${term}时节，${place}${weather}可以试试${dish}。`;
+}
 function nutritionRecommendation(balance,shopping=[]){
   const month=new Date().getMonth()+1;
   const season=month>=3&&month<=5?'春日':month>=6&&month<=8?'夏天':month>=9&&month<=11?'秋日':'冬日';
@@ -375,7 +462,7 @@ function nutritionRecommendation(balance,shopping=[]){
   const avoidText=avoid.join(' ');
   if(!balance.included||balance.confidence<.6){
     const preferenceHint=flavors[0]?`，也会照顾你喜欢的${flavors[0]}口味`:'';
-    return {text:balance.total?`🫘 ${season}也要吃得丰富些呀！把食材数量补完整${preferenceHint}，这里就能给出更贴心的采购提醒。`:`🫘 ${season}记得给冰箱添点喜欢的食材呀！录入库存后，系统会结合你的饮食偏好给出建议。`};
+    return {text:balance.total?`🫘 ${seasonalDishTip()} 把食材数量补完整${preferenceHint}，提醒会更贴心。`:`🫘 ${seasonalDishTip()} 录入库存后，还会结合你的偏好继续调整。`};
   }
 
   const planned=new Set(shopping.filter(item=>item.status==='pending').map(item=>resolveFoodProfile(item.name)?.group).filter(Boolean));
@@ -411,7 +498,7 @@ function nutritionRecommendation(balance,shopping=[]){
   const picks=ranked.filter(item=>item.score>0.12).slice(0,2).map(item=>item.group);
 
   if(!picks.length){
-    return {text:`🫘 ${season}的采购安排已经很周到啦！先把清单里的食材买齐，再按家里的消耗慢慢补充就好。`};
+    return {text:`🫘 ${seasonalDishTip()} 采购安排已经很周到啦，先把清单里的食材买齐就好。`};
   }
 
   const categoryText=picks.map(group=>labels[group]).join('和');
@@ -424,7 +511,7 @@ function nutritionRecommendation(balance,shopping=[]){
   ];
   const seed=[today,...picks,...flavors,...needs].join('').split('').reduce((sum,char)=>sum+char.charCodeAt(0),0);
   const main=variants[seed%variants.length];
-  return {text:expiryLead?`${main} ${expiryLead}`:main};
+  return {text:`🫘 ${seasonalDishTip()} ${expiryLead||main}`};
 }
 function renderHome(){
   const expiring=state.inventory.filter(item=>freshnessFor(item).key==='soon');
@@ -491,11 +578,25 @@ function recipeExpiryPriority(recipe){
   const earliest=soon.reduce((days,item)=>Math.min(days,item.expiryDate?Math.max(0,Math.round((Date.parse(item.expiryDate)-Date.parse(today))/86400000)):999),999);
   return {count:soon.length,earliest};
 }
+function festivalBanquetScore(recipe){
+  const festival=chineseFestival(new Date());if(!festival)return 0;
+  const text=[recipe.title,recipe.subtitle,...(recipe.tags||[]),...(recipe.mealTypes||[]),recipe.region].flat().join(' ');
+  const keywords={春节:/家宴|年夜|饺子|鱼|年糕|鸡|团圆/,元宵节:/汤圆|元宵|家宴/,端午节:/粽|家宴|蒸鱼|排骨/,中秋节:/家宴|团圆|芋头|鸭|鱼/,重阳节:/家宴|蒸菜|菊花|糕/}[festival];
+  return keywords?.test(text)?2:/家宴|团圆/.test(text)?1:0;
+}
+function regionalRecipeScore(recipe){
+  const region=homeContext.region;if(!region)return 0;
+  const declared=[recipe.region,...(recipe.regions||[]),...(recipe.tags||[])].flat().join(' ');
+  if(declared.includes(region))return 3;
+  const text=`${recipe.title||''} ${recipe.subtitle||''} ${declared}`;
+  const patterns={东北:/东北|锅包|地三鲜|乱炖|酸菜/,华北:/京味|北京|津味|鲁菜|山东|山西|河北|面食|饺子/,华东:/江浙|本帮|上海|苏式|杭帮|宁波|徽菜|福建|闽菜/,华南:/粤菜|广式|潮汕|客家|海南|广西/,华中:/湘菜|湖南|湖北|河南|楚味/,西南:/川菜|重庆|云南|贵州|酸汤|麻辣/,西北:/陕西|西安|甘肃|宁夏|青海|新疆|羊肉/};
+  return patterns[region]?.test(text)?2:0;
+}
 function sortAgentRecipes(recipes){
   return [...recipes].sort((left,right)=>{
     const a=recipeExpiryPriority(left),b=recipeExpiryPriority(right);
     const missingDifference=recipeMissingItems(left).length-recipeMissingItems(right).length;
-    return b.count-a.count||a.earliest-b.earliest||missingDifference||recipeStockMatchCount(right)-recipeStockMatchCount(left);
+    return festivalBanquetScore(right)-festivalBanquetScore(left)||b.count-a.count||a.earliest-b.earliest||regionalRecipeScore(right)-regionalRecipeScore(left)||missingDifference||recipeStockMatchCount(right)-recipeStockMatchCount(left);
   });
 }
 function recipeStockMatchCount(recipe){
@@ -511,7 +612,7 @@ function dailyRecommendationRecipes(){
   const source=library.length?library:(state.recipes||[]);
   return sortAgentRecipes(source.filter(safe)).slice(0,5).map(recipe=>({
     ...recipe,
-    tags:[...(recipeExpiryPriority(recipe).count?['临期优先']:[]),recipeMissingItems(recipe).length?'少量补购':'库存充足'],
+    tags:[...(festivalBanquetScore(recipe)?['节日家宴']:[]),...(regionalRecipeScore(recipe)?[`${homeContext.region}风味`]:[]),...(recipeExpiryPriority(recipe).count?['临期优先']:[]),recipeMissingItems(recipe).length?'少量补购':'库存充足'],
     ingredients:(recipe.ingredients||[]).map(item=>({...item,available:usableStockFor(item.name).length>0}))
   }));
 }
@@ -721,6 +822,10 @@ function render(){if(!state)return;if(inventoryEntryView!=='photo')stopCamera();
 function findRecipe(id){return (state.recipes||[]).find(r=>r.id===id)||agentResult?.recipes?.find(r=>r.id===id)||(typeof recipeLibrary==='undefined'?[]:recipeLibrary).find(r=>r.id===id);}
 function modal(content){modalLayer.hidden=false;modalLayer.innerHTML=`<div class="modal">${content}</div>`;}
 function closeModal(){modalLayer.hidden=true;modalLayer.innerHTML='';}
+function cityLocationModal(){
+  const cities=['北京','上海','天津','重庆','广州','深圳','杭州','南京','苏州','成都','武汉','西安','长沙','郑州','济南','青岛','沈阳','大连','长春','哈尔滨','福州','厦门','南昌','合肥','石家庄','太原','呼和浩特','南宁','海口','贵阳','昆明','拉萨','兰州','西宁','银川','乌鲁木齐','宁波','无锡','佛山','东莞','珠海','温州','泉州','烟台','洛阳','桂林','三亚'];
+  modal(`<div class="city-location-modal"><h2>修改所在城市</h2><p class="meta">仅支持中国城市，修改后会同步更新天气、地域推荐和节气提示。</p><form id="city-location-form"><label>城市</label><input name="city" list="china-city-list" required autocomplete="off" placeholder="搜索中国城市" value="${esc(homeContext.city||'')}"><datalist id="china-city-list">${cities.map(city=>`<option value="${city}"></option>`).join('')}</datalist><div class="modal-actions"><button type="button" class="secondary-button" data-action="use-current-location">使用当前位置</button><button class="primary-button" type="submit">确认城市</button></div></form></div>`);
+}
 function inventoryEntryChoiceModal(){modal(`<h2>选择录入方式</h2><div class="entry-method-grid"><button data-action="open-ai-entry"><span>✦</span><div><strong>AI录入</strong><small>用一句话批量识别食材信息</small></div></button><button data-action="open-photo-entry"><span>⌑</span><div><strong>拍照录入</strong><small>拍摄或选择食材照片</small></div></button><button data-action="open-manual-entry"><span>▤</span><div><strong>手动录入</strong><small>从知识库分类选择食材</small></div></button></div><div class="modal-actions"><button type="button" class="secondary-button" data-action="close-modal">取消</button></div>`);}
 function manualEntryUnitOptions(food,selected){return [...new Set(['克','斤',...Object.keys(food?.units||{}),selected,...commonUnits])].map(unit=>`<option ${unit===selected?'selected':''}>${unit}</option>`).join('');}
 function manualEntryEstimatedWeight(name,quantity,unit){const grams=unit==='克'?1:findFoodKnowledge(name)?.units?.[unit];return grams?`预计约 ${Math.round(Number(quantity||0)*grams)}g`:'暂无可用的克数估算';}
@@ -818,7 +923,7 @@ async function ask(question,quickMode=''){
       const fallback=fallbackAgentResult(mode,previousTitles);
       if(fallback.recipes.length||!result.recipes?.length)result=fallback;
     }
-    result.recipes=sortAgentRecipes(result.recipes||[]);
+    result.recipes=sortAgentRecipes(result.recipes||[]).map((recipe,index)=>({...recipe,tags:[...(index<2&&festivalBanquetScore(recipe)?['节日家宴']:[]),...(regionalRecipeScore(recipe)?[`${homeContext.region}风味`]:[]),...(recipe.tags||[])]}));
     agentResult=result;
     agentQuickMode=mode;
     state.recipes=[...(result.recipes||[]),...(state.recipes||[]).filter(old=>!(result.recipes||[]).some(next=>next.id===old.id))];
@@ -838,6 +943,8 @@ function captureCamera(){const video=document.getElementById('camera-preview');i
 async function importShopping(items){if(!items?.length){toast('当前没有需要补购的食材');return;}items.forEach(item=>state.shopping.push({id:`shop-${Date.now()}-${Math.random().toString(16).slice(2)}`,name:item.name,quantity:item.quantity,unit:item.unit,category:item.category||'其他',source:`菜谱导入 · ${item.source||selectedRecipe?.title||'智能推荐'}`,status:'pending',completedAt:''}));await persist();toast('已加入采购清单');}
 
 document.addEventListener('click',async event=>{const target=event.target.closest('[data-action],[data-tab],[data-tab-go]');if(!target)return;if(target.dataset.tab){currentTab=target.dataset.tab;selectedRecipe=null;returnTab=null;inventoryEntryView=null;photoPreviewUrl='';if(currentTab!=='inventory'){inventoryManageMode=false;selectedInventoryIds.clear();}render();return;}if(target.dataset.tabGo){currentTab=target.dataset.tabGo;selectedRecipe=null;returnTab=target.dataset.returnTab||null;inventoryEntryView=null;photoPreviewUrl='';if(currentTab!=='inventory'){inventoryManageMode=false;selectedInventoryIds.clear();}render();return;}const action=target.dataset.action;
+  if(action==='open-city-location'){cityLocationModal();return;}
+  if(action==='use-current-location'){closeModal();localStorage.removeItem('home-context-cache');loadHomeContext(true);return;}
   if(action==='open-guide-reference'){homepage.openGuideReference();return;}
   if(action==='open-dinner-wheel'){dinnerWheelModal();return;}
   if(action==='spin-dinner-wheel'){
@@ -865,6 +972,13 @@ document.addEventListener('keydown',event=>{const input=event.target.closest('in
 function updateManualConfirm(form,nameChanged=false){const name=form.elements.name.value.trim(),food=findFoodKnowledge(name);if(nameChanged&&food&&form.dataset.matchedName!==food.canonical_name){const unit=Object.keys(food.units||{})[0]||'个';form.elements.unit.innerHTML=manualEntryUnitOptions(food,unit);form.elements.location.value=food.default_storage==='frozen'?'冷冻':'冷藏';form.dataset.matchedName=food.canonical_name;}form.querySelector('.manual-estimated-weight').textContent=manualEntryEstimatedWeight(name,form.elements.quantity.value,form.elements.unit.value);}
 document.addEventListener('submit',async event=>{
   const form=event.target;
+  if(form.id==='city-location-form'){
+    event.preventDefault();event.stopImmediatePropagation();
+    const button=form.querySelector('[type="submit"]');button.disabled=true;button.textContent='正在更新…';
+    try{await chooseChinaCity(new FormData(form).get('city'));closeModal();toast('城市和天气已更新');}
+    catch(error){toast(error.message);button.disabled=false;button.textContent='确认城市';}
+    return;
+  }
   if(form.id==='ai-inventory-request-form'){
     event.preventDefault();event.stopImmediatePropagation();
     const button=form.querySelector('[type="submit"]');button.disabled=true;button.textContent='AI识别中…';
