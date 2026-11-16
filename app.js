@@ -625,9 +625,14 @@ function fallbackAgentResult(mode,previousTitles=[]){
     const name=canonicalFoodName(item.name);
     return !avoided.some(food=>name.includes(food)||food.includes(name));
   })&&!avoided.some(food=>canonicalFoodName(recipe.title).includes(food));
-  let candidates=(typeof recipeLibrary==='undefined'?[]:recipeLibrary).filter(safe);
+  const allCandidates=(typeof recipeLibrary==='undefined'?[]:recipeLibrary).filter(safe);
+  let candidates=[...allCandidates],usedExpiryMatch=false;
   if(mode==='dinner')candidates=candidates.filter(recipe=>(recipe.mealTypes||[]).includes('dinner')&&Number(recipe.duration)<=30);
-  if(mode==='expiry')candidates=candidates.filter(recipe=>recipeExpiryPriority(recipe).count>0);
+  if(mode==='expiry'){
+    const expiryMatches=candidates.filter(recipe=>recipeExpiryPriority(recipe).count>0);
+    if(expiryMatches.length){candidates=expiryMatches;usedExpiryMatch=true;}
+    else candidates=[...allCandidates];
+  }
   candidates=sortAgentRecipes(candidates);
   if(previousTitles.length){
     const different=candidates.filter(recipe=>!previousTitles.includes(recipe.title));
@@ -635,9 +640,10 @@ function fallbackAgentResult(mode,previousTitles=[]){
   }
   const recipes=candidates.slice(0,2).map(recipe=>{
     const missing=recipeMissingItems(recipe);
-    return {...recipe,reason:'熟悉的家常做法，适合今天在家做。',tags:[...(recipeExpiryPriority(recipe).count?['临期优先']:[]),missing.length?'需要补购':'库存充足'],ingredients:(recipe.ingredients||[]).map(item=>({...item,available:usableStockFor(item.name).length>0}))};
+    return {...recipe,reason:usedExpiryMatch?'优先使用仍可食用的临期食材。':'结合所在地域和你的饮食偏好推荐。',tags:[...(recipeExpiryPriority(recipe).count?['临期优先']:[]),...(regionalRecipeScore(recipe)?[`${homeContext.region}风味`]:[]),missing.length?'需要补购':'库存充足'],ingredients:(recipe.ingredients||[]).map(item=>({...item,available:usableStockFor(item.name).length>0}))};
   });
-  return {recipes,alerts:[],shopping:recipes.length?recipeMissingItems(recipes[0]).map(item=>({...item,quantity:item.suggestedQuantity})):[],emptyMessage:mode==='expiry'?'目前没有可安全使用的临期食材，可以看看其他菜谱。':'暂时没有合适的两人晚餐菜谱，可以换个条件试试。'};
+  const emptyMessage=mode==='expiry'?'菜谱库暂时没有符合忌口条件的菜谱，可以调整偏好后再试试。':'暂时没有合适的两人晚餐菜谱，可以换个条件试试。';
+  return {recipes,alerts:[],shopping:recipes.length?recipeMissingItems(recipes[0]).map(item=>({...item,quantity:item.suggestedQuantity})):[],emptyMessage};
 }
 function recommendationShoppingModal(recipe){
   recommendationShoppingDraft=recipe?recipeMissingItems(recipe):(agentResult?.shopping||[]).map(item=>({...item,suggestedQuantity:Number(item.quantity)||1,unit:item.unit||'个',category:item.category||'其他'}));
@@ -918,7 +924,10 @@ async function ask(question,quickMode=''){
       }catch(error){/* Keep the first response when the optional retry fails. */}
     }
     if(mode==='dinner')result.recipes=(result.recipes||[]).filter(recipe=>Number(recipe.duration)>0&&Number(recipe.duration)<=30&&Number(recipe.servings)===2);
-    if(mode==='expiry')result.recipes=(result.recipes||[]).filter(recipe=>recipeExpiryPriority(recipe).count>0);
+    if(mode==='expiry'){
+      const expiryMatches=(result.recipes||[]).filter(recipe=>recipeExpiryPriority(recipe).count>0);
+      result.recipes=expiryMatches.length?expiryMatches:[];
+    }
     if(['expiry','dinner'].includes(mode)&&(!result.recipes?.length||(previousTitles.length&&result.recipes.every(recipe=>previousTitles.includes(recipe.title))))){
       const fallback=fallbackAgentResult(mode,previousTitles);
       if(fallback.recipes.length||!result.recipes?.length)result=fallback;
