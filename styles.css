@@ -4,7 +4,7 @@
 .home-brand{min-width:0;flex:1;padding-top:2px}
 .home-brand .eyebrow{white-space:nowrap;font-size:10px}
 .app-header .home-brand h1{margin:0;color:var(--ink);font-size:23px;font-weight:700;letter-spacing:.03em;line-height:1.25}
-.home-weather{min-width:165px;max-width:205px;display:grid;gap:2px;justify-items:end;border:0;border-radius:13px;padding:7px 9px;background:linear-gradient(135deg,#eef7f1,#fff8ef);color:var(--ink);text-align:right;box-shadow:inset 0 0 0 1px rgba(92,130,105,.1)}
+.home-weather{min-width:0;width:max-content;max-width:185px;margin-left:auto;display:grid;gap:2px;justify-items:end;border:0;border-radius:13px;padding:7px 8px;background:linear-gradient(135deg,#eef7f1,#fff8ef);color:var(--ink);text-align:right;box-shadow:inset 0 0 0 1px rgba(92,130,105,.1)}
 .home-weather strong{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--ink)}
 .home-weather small{font-size:9px;color:var(--sub);font-weight:600;white-space:nowrap}
 .home-weather span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px;color:var(--green);font-weight:700}
@@ -113,6 +113,10 @@
 .home-page .nutrition-breakdown{display:block;margin:14px 0 0!important;color:var(--ink);font-size:11px!important}
 .home-page .nutrition-donut{width:148px;max-width:100%;aspect-ratio:1;border-radius:50%;margin:2px auto 14px;display:grid;place-items:center;box-shadow:0 8px 22px rgba(63,94,68,.1)}
 .home-page .nutrition-donut>span{width:57%;aspect-ratio:1;border-radius:50%;background:#fff;display:grid;place-items:center;text-align:center;font-size:11px;font-weight:700;line-height:1.35}
+.home-page .nutrition-reference-button{border:0;border-radius:99px;background:var(--green-soft);color:var(--green);padding:7px 9px;font-size:10px;font-weight:700;white-space:nowrap}
+.home-page .nutrition-energy-row{display:grid;grid-template-columns:1fr auto;align-items:center;gap:3px 10px;margin-top:12px;padding:10px 11px;border-radius:12px;background:#fff8ed;border:1px solid #f3e7d5}
+.home-page .nutrition-energy-row span,.home-page .nutrition-energy-row strong{font-size:11px}.home-page .nutrition-energy-row strong{color:var(--yellow)}
+.home-page .nutrition-energy-row small{grid-column:1/-1;color:var(--sub);font-size:10px;line-height:1.5}
 .home-page .nutrition-metric-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 .home-page .nutrition-metric{display:flex;align-items:center;gap:7px;min-width:0;padding:9px 10px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.84)}
 .home-page .nutrition-metric>i{width:8px;height:8px;border-radius:50%;flex:none}
@@ -124,7 +128,8 @@
 .home-page .nutrition-metric.met>b{color:#3d8a62}
 .home-page .nutrition-metric.unmet>b{color:#ce5d53}
 .home-page .nutrition-metric.neutral>b{color:var(--sub)}
-.home-page .nutrition-chart-note{font-size:10px!important;margin-top:10px!important;line-height:1.5}
+.home-page .nutrition-chart-note,.home-page .nutrition-source,.home-page .nutrition-disclaimer{font-size:10px!important;line-height:1.5;color:var(--sub)!important;margin:8px 0 0!important}
+.weekly-reference-list{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}.weekly-reference-row{display:flex;align-items:center;gap:8px;padding:10px;border:1px solid var(--line);border-radius:12px;background:#fff}.weekly-reference-row>i{width:9px;height:9px;border-radius:50%;flex:none}.weekly-reference-row strong,.weekly-reference-row small{display:block}.weekly-reference-row strong{font-size:12px}.weekly-reference-row small{font-size:10px;color:var(--sub);margin-top:2px}.guide-reference-intro,.guide-reference-source{font-size:11px;line-height:1.6;color:var(--sub)}.guide-reference-source{padding-top:10px;border-top:1px solid var(--line)}.guide-reference-source p{margin:4px 0 6px}.guide-reference-source a{color:var(--brand)}
 @media(max-width:360px){.home-page .nutrition-metric-list{grid-template-columns:1fr}}
 
 /* Homepage recommendation preview. */
@@ -158,11 +163,10 @@
 .dinner-wheel-entry{display:block;margin:0 auto 4px;border:0;background:transparent;color:var(--brand);font-size:13px;font-weight:650;padding:8px 12px;cursor:pointer}
 .dinner-wheel-modal{text-align:center}
 .dinner-wheel-copy{font-size:12px;line-height:1.55;color:var(--sub);margin:-7px 0 16px}
-.dinner-wheel{width:230px;height:230px;margin:8px auto 14px;border-radius:50%;position:relative;background:conic-gradient(#f6b69d 0 25%,#f4d28d 25% 50%,#a8cfb4 50% 75%,#a9c3e5 75% 100%);border:8px solid #fff;box-shadow:0 0 0 1px var(--line),0 12px 28px rgba(70,47,31,.12);transition:transform .85s cubic-bezier(.2,.75,.25,1)}
-.dinner-wheel.spinning{transform:rotate(765deg)}
+.dinner-wheel{--spin:0deg;width:230px;height:230px;margin:8px auto 14px;border-radius:50%;position:relative;background:conic-gradient(#f6b69d 0 12.5%,#f4d28d 12.5% 25%,#a8cfb4 25% 37.5%,#a9c3e5 37.5% 50%,#efb2c4 50% 62.5%,#cdb7e9 62.5% 75%,#9fd5cd 75% 87.5%,#f1c19d 87.5% 100%);border:8px solid #fff;box-shadow:0 0 0 1px var(--line),0 12px 28px rgba(70,47,31,.12);transition:transform .85s cubic-bezier(.2,.75,.25,1)}
+.dinner-wheel.spinning{transform:rotate(var(--spin))}
 .dinner-wheel>button{position:absolute;inset:50% auto auto 50%;transform:translate(-50%,-50%);width:70px;height:70px;border-radius:50%;border:6px solid rgba(255,255,255,.8);background:var(--brand);color:white;font-weight:700;box-shadow:0 3px 10px rgba(70,47,31,.2);z-index:2}
-.wheel-option{position:absolute;font-size:11px;font-weight:650;color:#59483f}
-.option-one{top:35px;right:40px}.option-two{right:35px;bottom:42px}.option-three{left:35px;bottom:42px}.option-four{top:35px;left:40px}
+.wheel-option{position:absolute;left:50%;top:50%;width:72px;margin:-7px 0 0 -36px;text-align:center;font-size:9px;line-height:1.15;font-weight:700;color:#59483f;transform:rotate(calc(var(--i)*45deg + 22.5deg)) translateY(-86px) rotate(calc(var(--i)*-45deg - 22.5deg));transform-origin:center}.wheel-option.used{opacity:.42}
 .wheel-pointer{position:absolute;top:-17px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:10px solid transparent;border-right:10px solid transparent;border-top:22px solid var(--brand);z-index:3}
 .dinner-wheel-result{min-height:20px;font-size:12px;color:var(--sub);margin:0}
 .home-recommendation-next{display:flex;flex-direction:column;gap:8px}
