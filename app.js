@@ -157,23 +157,26 @@ async function weatherAt(latitude,longitude){
   const code=Number(weatherData?.current?.weather_code),weather=weatherLabels[code]||['🌡️','实时天气'];
   return {weather:weather[1],weatherIcon:weather[0],temperature:Number.isFinite(Number(weatherData?.current?.temperature_2m))?Math.round(Number(weatherData.current.temperature_2m)):null};
 }
-function saveHomeContext(next){homeContext={...homeContext,...next,loading:false,error:false,savedAt:Date.now()};localStorage.setItem('home-context-cache',JSON.stringify(homeContext));if(state&&currentTab==='home')render();}
+function saveHomeContext(next){homeContext={...homeContext,...next,loading:false,error:false,locationError:'',savedAt:Date.now()};localStorage.setItem('home-context-cache',JSON.stringify(homeContext));if(state&&currentTab==='home')render();}
 async function loadHomeContext(force=false){
   if(!force){try{const cached=JSON.parse(localStorage.getItem('home-context-cache')||'null');if(cached){homeContext={...homeContext,...cached,loading:false,error:false};if(state&&currentTab==='home')render();return;}}catch{}}
-  if(!force&&localStorage.getItem('home-location-attempted')){homeContext={...homeContext,loading:false,error:true};if(state&&currentTab==='home')render();return;}
+  if(!force&&localStorage.getItem('home-location-attempted')){homeContext={...homeContext,loading:false,error:true};if(state&&currentTab==='home')render();if(!localStorage.getItem('home-location-prompted')){localStorage.setItem('home-location-prompted','1');setTimeout(()=>cityLocationModal(true),0);}return;}
   localStorage.setItem('home-location-attempted','1');
   homeContext={...homeContext,loading:true,error:false};if(state&&currentTab==='home')render();
   try{
-    let latitude,longitude,locationData;
-    try{const position=await geoPosition();latitude=position.coords.latitude;longitude=position.coords.longitude;}catch{}
-    const locationUrl=latitude==null?'https://api.bigdatacloud.net/data/reverse-geocode-client?localityLanguage=zh':`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}&localityLanguage=zh`;
+    const position=await geoPosition();
+    let latitude=position.coords.latitude,longitude=position.coords.longitude,locationData;
+    const locationUrl=`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}&localityLanguage=zh`;
     locationData=await fetch(locationUrl).then(response=>{if(!response.ok)throw new Error('定位服务暂不可用');return response.json();});
     latitude=Number(latitude??locationData.latitude);longitude=Number(longitude??locationData.longitude);
     const weather=Number.isFinite(latitude)&&Number.isFinite(longitude)?await weatherAt(latitude,longitude):{weather:'实时天气',weatherIcon:'🌡️',temperature:null};
     const city=locationData.city||locationData.locality||locationData.principalSubdivision||'当前位置';
     const province=locationData.principalSubdivision||'';
     saveHomeContext({city,province,region:regionForPlace(`${province}${city}`),...weather,source:'auto'});
-  }catch{homeContext={...homeContext,loading:false,error:true,weatherIcon:'📍'};}
+  }catch(error){
+    homeContext={...homeContext,loading:false,error:true,weatherIcon:'📍',locationError:error?.code===1?'定位权限未开启':error?.code===3?'定位请求超时':error?.message||'无法读取当前位置'};
+    if(!localStorage.getItem('home-location-prompted')){localStorage.setItem('home-location-prompted','1');setTimeout(()=>cityLocationModal(true),0);}
+  }
   if(state&&currentTab==='home')render();
 }
 async function chooseChinaCity(name){
@@ -617,7 +620,7 @@ function dinnerWheelModal(reset=false){
     dinnerWheelRecipes=(withoutLast.length>=8?withoutLast:candidates).slice(0,8);
   }
   const options=dinnerWheelRecipes.map((recipe,index)=>`<span class="wheel-option ${dinnerWheelUsed.has(recipe.id)?'used':''}" style="--i:${index}">${esc(recipe.title)}</span>`).join('');
-  modal(`<div class="dinner-wheel-modal"><button type="button" class="modal-close" aria-label="关闭" data-action="close-modal">×</button><p class="eyebrow">今天吃什么</p><h2>随机转盘</h2><p class="dinner-wheel-copy">优先考虑临期食材、库存匹配和少量补购；本轮不会重复。</p><div class="dinner-wheel" aria-label="晚餐随机转盘">${options}<i class="wheel-pointer"></i><button type="button" data-action="spin-dinner-wheel" ${dinnerWheelRecipes.length?'':'disabled'}>转一下</button></div><p class="dinner-wheel-result" id="dinner-wheel-result">${dinnerWheelRecipes.length?'准备好了吗？':'暂时没有符合偏好的菜谱'}</p></div>`);
+  modal(`<div class="dinner-wheel-modal"><button type="button" class="modal-close" aria-label="关闭" data-action="close-modal">×</button><p class="eyebrow">今天吃什么</p><h2>随机转盘</h2><p class="dinner-wheel-copy">转一下，看看今天吃什么吧！</p><div class="dinner-wheel" aria-label="晚餐随机转盘">${options}<i class="wheel-pointer"></i><button type="button" data-action="spin-dinner-wheel" ${dinnerWheelRecipes.length?'':'disabled'}>转一下</button></div><p class="dinner-wheel-result" id="dinner-wheel-result">${dinnerWheelRecipes.length?'准备好了吗？':'暂时没有符合偏好的菜谱'}</p></div>`);
 }
 function fallbackAgentResult(mode,previousTitles=[]){
   const avoided=[...(state.preferences?.allergies||[]),...(state.preferences?.avoid||[])].map(canonicalFoodName).filter(Boolean);
@@ -829,9 +832,10 @@ function render(){if(!state)return;if(inventoryEntryView!=='photo')stopCamera();
 function findRecipe(id){return (state.recipes||[]).find(r=>r.id===id)||agentResult?.recipes?.find(r=>r.id===id)||(typeof recipeLibrary==='undefined'?[]:recipeLibrary).find(r=>r.id===id);}
 function modal(content){modalLayer.hidden=false;modalLayer.innerHTML=`<div class="modal">${content}</div>`;}
 function closeModal(){modalLayer.hidden=true;modalLayer.innerHTML='';}
-function cityLocationModal(){
+function cityLocationModal(autoPrompt=false){
   const cities=['北京','上海','天津','重庆','广州','深圳','杭州','南京','苏州','成都','武汉','西安','长沙','郑州','济南','青岛','沈阳','大连','长春','哈尔滨','福州','厦门','南昌','合肥','石家庄','太原','呼和浩特','南宁','海口','贵阳','昆明','拉萨','兰州','西宁','银川','乌鲁木齐','宁波','无锡','佛山','东莞','珠海','温州','泉州','烟台','洛阳','桂林','三亚'];
-  modal(`<div class="city-location-modal"><h2>修改所在城市</h2><p class="meta">仅支持中国城市，修改后会同步更新天气、地域推荐和节气提示。</p><form id="city-location-form"><label>城市</label><input name="city" list="china-city-list" required autocomplete="off" placeholder="搜索中国城市" value="${esc(homeContext.city||'')}"><datalist id="china-city-list">${cities.map(city=>`<option value="${city}"></option>`).join('')}</datalist><div class="modal-actions"><button type="button" class="secondary-button" data-action="use-current-location">使用当前位置</button><button class="primary-button" type="submit">确认城市</button></div></form></div>`);
+  const reason=autoPrompt&&homeContext.locationError?`${homeContext.locationError}，请先选择城市。`:'仅支持中国城市，修改后会同步更新天气、地域推荐和节气提示。';
+  modal(`<div class="city-location-modal"><button type="button" class="modal-close" aria-label="关闭" data-action="close-modal">×</button><h2>${autoPrompt?'选择所在城市':'修改所在城市'}</h2><p class="meta">${esc(reason)}</p><form id="city-location-form"><label>城市</label><input name="city" list="china-city-list" required autocomplete="off" placeholder="搜索中国城市" value="${esc(homeContext.city||'')}"><datalist id="china-city-list">${cities.map(city=>`<option value="${city}"></option>`).join('')}</datalist><div class="modal-actions"><button type="button" class="secondary-button" data-action="use-current-location">重新定位</button><button class="primary-button" type="submit">确认城市</button></div></form></div>`);
 }
 function inventoryEntryChoiceModal(){modal(`<h2>选择录入方式</h2><div class="entry-method-grid"><button data-action="open-ai-entry"><span>✦</span><div><strong>AI录入</strong><small>用一句话批量识别食材信息</small></div></button><button data-action="open-photo-entry"><span>⌑</span><div><strong>拍照录入</strong><small>拍摄或选择食材照片</small></div></button><button data-action="open-manual-entry"><span>▤</span><div><strong>手动录入</strong><small>从知识库分类选择食材</small></div></button></div><div class="modal-actions"><button type="button" class="secondary-button" data-action="close-modal">取消</button></div>`);}
 function manualEntryUnitOptions(food,selected){return [...new Set(['克','斤',...Object.keys(food?.units||{}),selected,...commonUnits])].map(unit=>`<option ${unit===selected?'selected':''}>${unit}</option>`).join('');}
@@ -954,7 +958,7 @@ async function importShopping(items){if(!items?.length){toast('当前没有需�
 
 document.addEventListener('click',async event=>{const target=event.target.closest('[data-action],[data-tab],[data-tab-go]');if(!target)return;if(target.dataset.tab){currentTab=target.dataset.tab;selectedRecipe=null;returnTab=null;inventoryEntryView=null;photoPreviewUrl='';if(currentTab!=='inventory'){inventoryManageMode=false;selectedInventoryIds.clear();}render();return;}if(target.dataset.tabGo){currentTab=target.dataset.tabGo;selectedRecipe=null;returnTab=target.dataset.returnTab||null;inventoryEntryView=null;photoPreviewUrl='';if(currentTab!=='inventory'){inventoryManageMode=false;selectedInventoryIds.clear();}render();return;}const action=target.dataset.action;
   if(action==='open-city-location'){cityLocationModal();return;}
-  if(action==='use-current-location'){closeModal();localStorage.removeItem('home-context-cache');loadHomeContext(true);return;}
+  if(action==='use-current-location'){closeModal();localStorage.removeItem('home-context-cache');localStorage.removeItem('home-location-prompted');loadHomeContext(true);return;}
   if(action==='open-guide-reference'){homepage.openGuideReference();return;}
   if(action==='open-dinner-wheel'){dinnerWheelModal();return;}
   if(action==='back-to-dinner-wheel'){dinnerWheelModal();return;}
