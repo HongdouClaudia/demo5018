@@ -257,7 +257,7 @@ def ask_deepseek(question, state, recipe_catalog = [], quick_mode = nil, avoid_t
       freshness: item['freshness'], expiryDate: item['expiryDate'], expired: !item['expiryDate'].to_s.empty? && item['expiryDate'] < today
     }
   end
-  catalog = Array(recipe_catalog).select { |item| item.is_a?(Hash) && !item['id'].to_s.empty? && !item['title'].to_s.empty? }.take(30).map do |item|
+  catalog = Array(recipe_catalog).select { |item| item.is_a?(Hash) && !item['id'].to_s.empty? && !item['title'].to_s.empty? }.map do |item|
     { id: item['id'].to_s[0, 80], title: item['title'].to_s[0, 80], duration: item['duration'].to_i, mealTypes: Array(item['mealTypes']).map(&:to_s).take(5), ingredients: Array(item['ingredients']).map { |name| name.to_s[0, 50] }.take(12) }
   end
   inventory_names = inventory_context.map { |item| item[:name].to_s }
