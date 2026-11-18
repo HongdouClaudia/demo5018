@@ -218,7 +218,8 @@ function headerContent(){
   const headerAction=currentTab==='inventory'&&inventoryEntryView?'<button class="header-back-action" data-action="back-to-inventory">‹ 返回冰箱</button>':currentTab==='recipes'&&returnTab==='profile'&&!selectedRecipe?'<button class="header-back-action" data-action="back-to-profile">‹ 返回我的</button>':'';
   header.innerHTML=`<div class="topline"><div><p class="eyebrow">${sub}</p><h1>${title}</h1></div>${headerAction}</div>`;
 }
-function tags(tags=[]){return `<div class="tag-row">${tags.map((tag,i)=>`<span class="tag ${i===0?'green':''}">${esc(tag)}</span>`).join('')}</div>`;}
+function uniqueTags(values=[]){return [...new Set(values.map(value=>String(value||'').trim()).filter(Boolean))];}
+function tags(tags=[]){return `<div class="tag-row">${uniqueTags(tags).map((tag,i)=>`<span class="tag ${i===0?'green':''}">${esc(tag)}</span>`).join('')}</div>`;}
 function recipeCard(recipe){return `<button class="recipe-card" data-action="open-recipe" data-id="${esc(recipe.id)}"><div class="recipe-visual">${esc(recipe.imageEmoji||'🍲')}</div><div class="recipe-body"><h3>${esc(recipe.title)}</h3><div class="meta"><span>${esc(recipe.duration||30)} 分钟</span><span>·</span><span>${esc(recipe.difficulty||'简单')}</span><span>·</span><span>${esc(recipe.servings||2)} 人</span></div>${tags(recipe.tags||[])}</div></button>`;}
 // BEGIN HOMEPAGE-ONLY MODULE
 const homepage = (() => {
@@ -435,7 +436,7 @@ function recentConsumptionByGroup(days=14){
   return totals;
 }
 function seasonalDishTip(){
-  const term=solarTermFor(new Date()),region=homeContext.region||'',city=homeContext.city||'';
+  const term=solarTermFor(new Date()),region=homeContext.region||'';
   const north=['东北','华北','西北'].includes(region),south=['华东','华南','西南'].includes(region);
   const index=solarTermNames.indexOf(term),season=index>=2&&index<=7?'spring':index>=8&&index<=13?'summer':index>=14&&index<=19?'autumn':'winter';
   const choices={
@@ -446,7 +447,7 @@ function seasonalDishTip(){
   }[season];
   const avoided=[...(state.preferences?.avoid||[]),...(state.preferences?.allergies||[])].map(String).filter(Boolean);
   const dish=choices.find(item=>!avoided.some(food=>item.includes(food)))||'温热的时令蔬菜汤';
-  const context=[city?`在${city}`:'',homeContext.temperature===null?'':homeContext.temperature<=10?'天气偏凉':homeContext.temperature>=28?'天气偏热':''].filter(Boolean).join('，');
+  const context=[homeContext.temperature===null?'':homeContext.temperature<=10?'天气偏凉':homeContext.temperature>=28?'天气偏热':''].filter(Boolean).join('，');
   return `${term}时节，${context?`${context}，`:''}可以试试${dish}。`;
 }
 function nutritionRecommendation(balance,shopping=[]){
@@ -543,7 +544,9 @@ function libraryRecipeFor(recipe){
 }
 function canonicalFoodName(name){
   const value=String(name||'').trim();
-  return findFoodKnowledge(value)?.canonical_name||value;
+  const canonical=findFoodKnowledge(value)?.canonical_name||value;
+  if(/^(三黄鸡|整鸡|白条鸡|鸡胸肉|鸡腿肉|鸡腿|鸡翅|鸡肉)$/.test(canonical))return '鸡肉';
+  return canonical;
 }
 function usableStockFor(name){
   const canonical=canonicalFoodName(name);
@@ -596,7 +599,7 @@ function sortAgentRecipes(recipes){
     const a=recipeExpiryPriority(left),b=recipeExpiryPriority(right);
     const missingDifference=recipeMissingItems(left).length-recipeMissingItems(right).length;
     const stockDifference=recipeStockMatchCount(right)-recipeStockMatchCount(left);
-    return b.count-a.count||a.earliest-b.earliest||stockDifference||missingDifference||festivalBanquetScore(right)-festivalBanquetScore(left)||regionalRecipeScore(right)-regionalRecipeScore(left);
+    return missingDifference||b.count-a.count||a.earliest-b.earliest||stockDifference||festivalBanquetScore(right)-festivalBanquetScore(left)||regionalRecipeScore(right)-regionalRecipeScore(left);
   });
 }
 function recipeStockMatchCount(recipe){
@@ -612,7 +615,7 @@ function dailyRecommendationRecipes(){
   const source=library.length?library:(state.recipes||[]);
   return sortAgentRecipes(source.filter(safe)).slice(0,5).map(recipe=>({
     ...recipe,
-    tags:[...(festivalBanquetScore(recipe)?['节日家宴']:[]),...(regionalRecipeScore(recipe)?[`${homeContext.region}风味`]:[]),...(recipeExpiryPriority(recipe).count?['临期优先']:[]),recipeMissingItems(recipe).length?'少量补购':'库存充足'],
+    tags:uniqueTags([...(festivalBanquetScore(recipe)?['节日家宴']:[]),...(regionalRecipeScore(recipe)?[`${homeContext.region}风味`]:[]),...(recipeExpiryPriority(recipe).count?['临期优先']:[]),recipeMissingItems(recipe).length?'少量补购':'库存充足']),
     ingredients:(recipe.ingredients||[]).map(item=>({...item,available:usableStockFor(item.name).length>0}))
   }));
 }
@@ -653,7 +656,7 @@ function fallbackAgentResult(mode,previousTitles=[]){
   }
   const recipes=candidates.slice(0,2).map(recipe=>{
     const missing=recipeMissingItems(recipe);
-    return {...recipe,reason:usedExpiryMatch?'优先使用仍可食用的临期食材。':'结合所在地域和你的饮食偏好推荐。',tags:[...(recipeExpiryPriority(recipe).count?['临期优先']:[]),...(regionalRecipeScore(recipe)?[`${homeContext.region}风味`]:[]),missing.length?'需要补购':'库存充足'],ingredients:(recipe.ingredients||[]).map(item=>({...item,available:usableStockFor(item.name).length>0}))};
+    return {...recipe,reason:usedExpiryMatch?'优先使用仍可食用的临期食材。':'结合所在地域和你的饮食偏好推荐。',tags:uniqueTags([...(recipeExpiryPriority(recipe).count?['临期优先']:[]),...(regionalRecipeScore(recipe)?[`${homeContext.region}风味`]:[]),missing.length?'需要补购':'库存充足']),ingredients:(recipe.ingredients||[]).map(item=>({...item,available:usableStockFor(item.name).length>0}))};
   });
   const emptyMessage=mode==='expiry'?'菜谱库暂时没有符合忌口条件的菜谱，可以调整偏好后再试试。':'暂时没有合适的两人晚餐菜谱，可以换个条件试试。';
   return {recipes,alerts:[],shopping:recipes.length?recipeMissingItems(recipes[0]).map(item=>({...item,quantity:item.suggestedQuantity})):[],emptyMessage};
@@ -946,7 +949,7 @@ async function ask(question,quickMode=''){
       const fallback=fallbackAgentResult(mode,previousTitles);
       if(fallback.recipes.length||!result.recipes?.length)result=fallback;
     }
-    result.recipes=sortAgentRecipes(result.recipes||[]).map((recipe,index)=>({...recipe,tags:[...(index<2&&festivalBanquetScore(recipe)?['节日家宴']:[]),...(regionalRecipeScore(recipe)?[`${homeContext.region}风味`]:[]),...(recipe.tags||[])]}));
+    result.recipes=sortAgentRecipes(result.recipes||[]).map((recipe,index)=>({...recipe,tags:uniqueTags([...(index<2&&festivalBanquetScore(recipe)?['节日家宴']:[]),...(regionalRecipeScore(recipe)?[`${homeContext.region}风味`]:[]),...(recipe.tags||[])])}));
     agentResult=result;
     agentQuickMode=mode;
     state.recipes=[...(result.recipes||[]),...(state.recipes||[]).filter(old=>!(result.recipes||[]).some(next=>next.id===old.id))];
