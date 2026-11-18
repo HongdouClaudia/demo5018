@@ -621,8 +621,9 @@ function dailyRecommendationRecipes(){
 }
 function dinnerWheelCandidates(){
   const avoided=[...(state.preferences?.allergies||[]),...(state.preferences?.avoid||[])].map(canonicalFoodName).filter(Boolean);
+  const dailyIds=new Set(dailyRecommendationRecipes().map(recipe=>recipe.id));
   const source=typeof recipeLibrary==='undefined'?[]:recipeLibrary;
-  return sortAgentRecipes(source.filter(recipe=>!avoided.some(food=>canonicalFoodName(recipe.title).includes(food)||(recipe.ingredients||[]).some(item=>{const name=canonicalFoodName(item.name);return name.includes(food)||food.includes(name);}))))
+  return sortAgentRecipes(source.filter(recipe=>!dailyIds.has(recipe.id)&&!avoided.some(food=>canonicalFoodName(recipe.title).includes(food)||(recipe.ingredients||[]).some(item=>{const name=canonicalFoodName(item.name);return name.includes(food)||food.includes(name);}))))
     .map(recipe=>({...recipe,ingredients:(recipe.ingredients||[]).map(item=>({...item,available:usableStockFor(item.name).length>0}))}));
 }
 function dinnerWheelModal(reset=false){
