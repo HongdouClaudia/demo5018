@@ -124,6 +124,7 @@ async function api(url, options={}) {
 }
 
 const weatherLabels={0:['☀️','晴'],1:['🌤️','大致晴朗'],2:['⛅','多云'],3:['☁️','阴'],45:['🌫️','有雾'],48:['🌫️','雾凇'],51:['🌦️','小毛毛雨'],53:['🌦️','毛毛雨'],55:['🌧️','较强毛毛雨'],61:['🌦️','小雨'],63:['🌧️','中雨'],65:['🌧️','大雨'],71:['🌨️','小雪'],73:['❄️','中雪'],75:['❄️','大雪'],80:['🌦️','阵雨'],81:['🌧️','较强阵雨'],82:['⛈️','强阵雨'],95:['⛈️','雷雨'],96:['⛈️','雷雨伴冰雹'],99:['⛈️','强雷雨伴冰雹']};
+const chinaCities=['北京','上海','天津','重庆','广州','深圳','杭州','南京','苏州','成都','武汉','西安','长沙','郑州','济南','青岛','沈阳','大连','长春','哈尔滨','福州','厦门','南昌','合肥','石家庄','太原','呼和浩特','南宁','海口','贵阳','昆明','拉萨','兰州','西宁','银川','乌鲁木齐','宁波','无锡','佛山','东莞','珠海','温州','泉州','烟台','洛阳','桂林','三亚'];
 function chineseFestival(date=new Date()){
   const fixed={"1-1":'元旦',"5-1":'劳动节',"10-1":'国庆节'}[`${date.getMonth()+1}-${date.getDate()}`];
   if(fixed)return fixed;
@@ -142,13 +143,13 @@ function solarTermFor(date=new Date()){
   return previous.name;
 }
 function regionForPlace(place=''){
-  if(/黑龙江|吉林|辽宁|东北/.test(place))return '东北';
-  if(/北京|天津|河北|山东|山西|内蒙古/.test(place))return '华北';
-  if(/上海|江苏|浙江|安徽|福建|江西/.test(place))return '华东';
-  if(/广东|广西|海南|香港|澳门/.test(place))return '华南';
-  if(/河南|湖北|湖南/.test(place))return '华中';
-  if(/四川|重庆|云南|贵州|西藏/.test(place))return '西南';
-  if(/陕西|甘肃|宁夏|青海|新疆/.test(place))return '西北';
+  if(/黑龙江|吉林|辽宁|东北|哈尔滨|长春|沈阳|大连/.test(place))return '东北';
+  if(/北京|天津|河北|山东|山西|内蒙古|石家庄|济南|青岛|烟台|太原|呼和浩特/.test(place))return '华北';
+  if(/上海|江苏|浙江|安徽|福建|江西|南京|苏州|无锡|杭州|宁波|温州|合肥|福州|厦门|泉州|南昌/.test(place))return '华东';
+  if(/广东|广西|海南|香港|澳门|广州|深圳|佛山|东莞|珠海|南宁|桂林|海口|三亚/.test(place))return '华南';
+  if(/河南|湖北|湖南|郑州|洛阳|武汉|长沙/.test(place))return '华中';
+  if(/四川|重庆|云南|贵州|西藏|成都|昆明|贵阳|拉萨/.test(place))return '西南';
+  if(/陕西|甘肃|宁夏|青海|新疆|西安|兰州|银川|西宁|乌鲁木齐/.test(place))return '西北';
   return '';
 }
 function geoPosition(){return new Promise((resolve,reject)=>{if(!navigator.geolocation)return reject(new Error('浏览器不支持定位'));navigator.geolocation.getCurrentPosition(resolve,reject,{enableHighAccuracy:false,timeout:6500,maximumAge:30*60*1000});});}
@@ -180,13 +181,20 @@ async function loadHomeContext(force=false){
   if(state&&currentTab==='home')render();
 }
 async function chooseChinaCity(name){
-  const query=String(name||'').trim();if(!query)throw new Error('请输入城市名称');
-  const url=`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=10&language=zh&format=json&countryCode=CN`;
-  const data=await fetch(url).then(response=>{if(!response.ok)throw new Error('城市查询失败');return response.json();});
-  const place=(data.results||[]).find(item=>item.country_code==='CN'||item.country==='中国');
-  if(!place)throw new Error('没有找到这个中国城市');
-  const weather=await weatherAt(place.latitude,place.longitude),city=place.name||query,province=place.admin1||'';
-  saveHomeContext({city,province,region:regionForPlace(`${province}${city}`),...weather,source:'manual'});
+  const query=String(name||'').trim().replace(/市$/,'');if(!query)throw new Error('请输入城市名称');
+  if(!chinaCities.includes(query))throw new Error('请选择列表中的中国城市');
+  saveHomeContext({city:query,province:'',region:regionForPlace(query),weather:'天气待更新',weatherIcon:'🌡️',temperature:null,source:'manual'});
+  Promise.resolve().then(async()=>{
+    try{
+      const url=`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=10&language=zh&format=json&countryCode=CN`;
+      const data=await fetch(url).then(response=>{if(!response.ok)throw new Error('城市查询失败');return response.json();});
+      const place=(data.results||[]).find(item=>item.country_code==='CN'||item.country==='中国');
+      if(!place)return;
+      const weather=await weatherAt(place.latitude,place.longitude),city=place.name||query,province=place.admin1||'';
+      saveHomeContext({city,province,region:regionForPlace(`${province}${city}`),...weather,source:'manual'});
+    }catch{/* 城市已保存，天气失败时保留“待更新”。 */}
+  });
+  return false;
 }
 async function loadState(){const [saved,knowledge]=await Promise.all([api('/api/state'),api('/food_knowledge.json')]);state=saved;foodKnowledge=knowledge.foods||[];const merged=mergeInventoryItems(state.inventory||[]);state.inventory=merged.items;if(merged.changed)await persist();render();loadHomeContext();}
 async function persist(){state.inventory=mergeInventoryItems(state.inventory||[]).items;state=await api('/api/state',{method:'PUT',body:JSON.stringify({state})});}
@@ -511,8 +519,8 @@ function renderHome(){
   const tip=nutritionRecommendation(balance,pending);
   const nearestExpiring=[...expiring].sort((a,b)=>inventoryAgeDays(b)-inventoryAgeDays(a)).slice(0,2);
   const expiryRows=nearestExpiring.map(item=>`<span class="expiry-item"><strong>${esc(item.name)}</strong><small>${esc(freshnessFor(item).label)}</small></span>`).join('');
-  return `<div class="home-page"><section class="card agent-card"><div class="agent-intro"><div class="agent-avatar">✦</div><div><strong>问问厨房管家</strong><p>我会优先为你消耗现有和临期食材</p></div></div><form class="ask-row" id="ask-form"><input id="agent-question" required placeholder="例如：30 分钟做两人晚餐" /><button type="submit">提问</button></form><div class="quick-chips">${['优先用掉快过期食材','30 分钟做两人晚餐','看看我还缺什么'].map((q,i)=>`<button class="chip" data-action="quick-ask" data-quick-mode="${['expiry','dinner','shopping'][i]}" data-question="${q}">${q}</button>`).join('')}</div></section>
-  <div class="home-shortcuts"><button class="home-shortcut expiry-shortcut" data-tab-go="inventory"><span class="shortcut-icon">◷</span><span><strong>需优先处理</strong>${expiring.length?`<span class="expiry-preview">${expiryRows||'<small>查看库存记录</small>'}</span>`:'<small>暂时没有需优先处理的食材</small>'}</span><b>›</b></button><button class="home-shortcut shopping-shortcut" data-tab-go="shopping"><span class="shortcut-icon">🧺</span><span><strong>采购清单</strong><small>${pending.length?`还有 ${pending.length} 项待买`:'清单目前为空'}</small></span><b>›</b></button></div>
+  return `<div class="home-page"><div class="home-shortcuts"><button class="home-shortcut expiry-shortcut" data-tab-go="inventory"><span class="shortcut-icon">◷</span><span><strong>需优先处理</strong>${expiring.length?`<span class="expiry-preview">${expiryRows||'<small>查看库存记录</small>'}</span>`:'<small>暂时没有需优先处理的食材</small>'}</span><b>›</b></button><button class="home-shortcut shopping-shortcut" data-tab-go="shopping"><span class="shortcut-icon">🧺</span><span><strong>采购清单</strong><small>${pending.length?`还有 ${pending.length} 项待买`:'清单目前为空'}</small></span><b>›</b></button></div>
+  <section class="card agent-card"><div class="agent-intro"><div class="agent-avatar">✦</div><div><strong>问问厨房管家</strong><p>我会优先为你消耗现有和临期食材</p></div></div><form class="ask-row" id="ask-form"><input id="agent-question" required placeholder="例如：30 分钟做两人晚餐" /><button type="submit">提问</button></form><div class="quick-chips">${['优先用掉快过期食材','30 分钟做两人晚餐','看看我还缺什么'].map((q,i)=>`<button class="chip" data-action="quick-ask" data-quick-mode="${['expiry','dinner','shopping'][i]}" data-question="${q}">${q}</button>`).join('')}</div></section>
   ${agentLoading?'<section class="card loading"><span class="spinner"></span>厨房管家正在分析你的库存与偏好…</section>':''}
   ${agentResult?agentPanel(agentResult):''}
   ${nutritionHealthCard()}
@@ -586,7 +594,8 @@ function sortAgentRecipes(recipes){
   return [...recipes].sort((left,right)=>{
     const a=recipeExpiryPriority(left),b=recipeExpiryPriority(right);
     const missingDifference=recipeMissingItems(left).length-recipeMissingItems(right).length;
-    return festivalBanquetScore(right)-festivalBanquetScore(left)||b.count-a.count||a.earliest-b.earliest||regionalRecipeScore(right)-regionalRecipeScore(left)||missingDifference||recipeStockMatchCount(right)-recipeStockMatchCount(left);
+    const stockDifference=recipeStockMatchCount(right)-recipeStockMatchCount(left);
+    return b.count-a.count||a.earliest-b.earliest||stockDifference||missingDifference||festivalBanquetScore(right)-festivalBanquetScore(left)||regionalRecipeScore(right)-regionalRecipeScore(left);
   });
 }
 function recipeStockMatchCount(recipe){
@@ -833,9 +842,8 @@ function findRecipe(id){return (state.recipes||[]).find(r=>r.id===id)||agentResu
 function modal(content){modalLayer.hidden=false;modalLayer.innerHTML=`<div class="modal">${content}</div>`;}
 function closeModal(){modalLayer.hidden=true;modalLayer.innerHTML='';}
 function cityLocationModal(autoPrompt=false){
-  const cities=['北京','上海','天津','重庆','广州','深圳','杭州','南京','苏州','成都','武汉','西安','长沙','郑州','济南','青岛','沈阳','大连','长春','哈尔滨','福州','厦门','南昌','合肥','石家庄','太原','呼和浩特','南宁','海口','贵阳','昆明','拉萨','兰州','西宁','银川','乌鲁木齐','宁波','无锡','佛山','东莞','珠海','温州','泉州','烟台','洛阳','桂林','三亚'];
   const reason=autoPrompt&&homeContext.locationError?`${homeContext.locationError}，请先选择城市。`:'仅支持中国城市，修改后会同步更新天气、地域推荐和节气提示。';
-  modal(`<div class="city-location-modal"><button type="button" class="modal-close" aria-label="关闭" data-action="close-modal">×</button><h2>${autoPrompt?'选择所在城市':'修改所在城市'}</h2><p class="meta">${esc(reason)}</p><form id="city-location-form"><label>城市</label><input name="city" list="china-city-list" required autocomplete="off" placeholder="搜索中国城市" value="${esc(homeContext.city||'')}"><datalist id="china-city-list">${cities.map(city=>`<option value="${city}"></option>`).join('')}</datalist><div class="modal-actions"><button type="button" class="secondary-button" data-action="use-current-location">重新定位</button><button class="primary-button" type="submit">确认城市</button></div></form></div>`);
+  modal(`<div class="city-location-modal"><button type="button" class="modal-close" aria-label="关闭" data-action="close-modal">×</button><h2>${autoPrompt?'选择所在城市':'修改所在城市'}</h2><p class="meta">${esc(reason)}</p><form id="city-location-form"><label>城市</label><input name="city" list="china-city-list" required autocomplete="off" placeholder="搜索中国城市" value="${esc(homeContext.city||'')}"><datalist id="china-city-list">${chinaCities.map(city=>`<option value="${city}"></option>`).join('')}</datalist><div class="modal-actions"><button type="button" class="secondary-button" data-action="use-current-location">重新定位</button><button class="primary-button" type="submit">确认城市</button></div></form></div>`);
 }
 function inventoryEntryChoiceModal(){modal(`<h2>选择录入方式</h2><div class="entry-method-grid"><button data-action="open-ai-entry"><span>✦</span><div><strong>AI录入</strong><small>用一句话批量识别食材信息</small></div></button><button data-action="open-photo-entry"><span>⌑</span><div><strong>拍照录入</strong><small>拍摄或选择食材照片</small></div></button><button data-action="open-manual-entry"><span>▤</span><div><strong>手动录入</strong><small>从知识库分类选择食材</small></div></button></div><div class="modal-actions"><button type="button" class="secondary-button" data-action="close-modal">取消</button></div>`);}
 function manualEntryUnitOptions(food,selected){return [...new Set(['克','斤',...Object.keys(food?.units||{}),selected,...commonUnits])].map(unit=>`<option ${unit===selected?'selected':''}>${unit}</option>`).join('');}
@@ -996,7 +1004,7 @@ document.addEventListener('submit',async event=>{
   if(form.id==='city-location-form'){
     event.preventDefault();event.stopImmediatePropagation();
     const button=form.querySelector('[type="submit"]');button.disabled=true;button.textContent='正在更新…';
-    try{await chooseChinaCity(new FormData(form).get('city'));closeModal();toast('城市和天气已更新');}
+    try{const weatherUpdated=await chooseChinaCity(new FormData(form).get('city'));closeModal();toast(weatherUpdated?'城市和天气已更新':'城市已保存，天气稍后更新');}
     catch(error){toast(error.message);button.disabled=false;button.textContent='确认城市';}
     return;
   }
