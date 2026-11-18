@@ -252,6 +252,7 @@ const recipeImageAssets = {
 };
 function recipeImage(recipe){
   if(/^assets\/generated\/[a-f0-9]{64}\.jpg$/.test(recipe.imageUrl||''))return recipe.imageUrl;
+  if(/^menu-\d{3}$/.test(recipe.id||''))return `assets/recipes/library/${recipe.id}.jpg`;
   if(recipe.imageUrl){try{const imageUrl=new URL(recipe.imageUrl);if(imageUrl.protocol==='https:'&&(imageUrl.hostname==='serpapi.com'||imageUrl.hostname.endsWith('.serpapi.com')||imageUrl.hostname.endsWith('.gstatic.com')||imageUrl.hostname.endsWith('.googleusercontent.com')))return imageUrl.href;}catch{}}
   if(recipeImageAssets[recipe.imageKey])return recipeImageAssets[recipe.imageKey];
   const ingredients=(recipe.ingredients||[]).map(item=>item.name||'').join(' ');
