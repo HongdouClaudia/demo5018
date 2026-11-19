@@ -28,6 +28,10 @@ let manualEntrySearch = '';
 let manualEntryCart = [];
 let manualEntryFlightOrigin = null;
 let manualCartExpanded = false;
+let homeContext={city:'',province:'',region:'',weather:'',temperature:null,weatherIcon:'📍',loading:true,error:false};
+let dinnerWheelRecipes=[];
+let dinnerWheelUsed=new Set();
+let dinnerWheelLastRecipeId='';
 
 const icons = {番茄:'🍅',鸡蛋:'🥚',鸡胸肉:'🍗',西兰花:'🥦',大米:'🍚',胡萝卜:'🥕',生抽:'🥣',牛奶:'🥛',香蕉:'🍌'};
 const esc = (value='') => String(value).replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
@@ -119,7 +123,80 @@ async function api(url, options={}) {
   return data;
 }
 
-async function loadState(){const [saved,knowledge]=await Promise.all([api('/api/state'),api('/food_knowledge.json')]);state=saved;foodKnowledge=knowledge.foods||[];const merged=mergeInventoryItems(state.inventory||[]);state.inventory=merged.items;if(merged.changed)await persist();render();}
+const weatherLabels={0:['☀️','晴'],1:['🌤️','大致晴朗'],2:['⛅','多云'],3:['☁️','阴'],45:['🌫️','有雾'],48:['🌫️','雾凇'],51:['🌦️','小毛毛雨'],53:['🌦️','毛毛雨'],55:['🌧️','较强毛毛雨'],61:['🌦️','小雨'],63:['🌧️','中雨'],65:['🌧️','大雨'],71:['🌨️','小雪'],73:['❄️','中雪'],75:['❄️','大雪'],80:['🌦️','阵雨'],81:['🌧️','较强阵雨'],82:['⛈️','强阵雨'],95:['⛈️','雷雨'],96:['⛈️','雷雨伴冰雹'],99:['⛈️','强雷雨伴冰雹']};
+const chinaCities=['北京','上海','天津','重庆','广州','深圳','杭州','南京','苏州','成都','武汉','西安','长沙','郑州','济南','青岛','沈阳','大连','长春','哈尔滨','福州','厦门','南昌','合肥','石家庄','太原','呼和浩特','南宁','海口','贵阳','昆明','拉萨','兰州','西宁','银川','乌鲁木齐','宁波','无锡','佛山','东莞','珠海','温州','泉州','烟台','洛阳','桂林','三亚'];
+function chineseFestival(date=new Date()){
+  const fixed={"1-1":'元旦',"5-1":'劳动节',"10-1":'国庆节'}[`${date.getMonth()+1}-${date.getDate()}`];
+  if(fixed)return fixed;
+  try{
+    const parts=new Intl.DateTimeFormat('en-u-ca-chinese',{month:'numeric',day:'numeric'}).formatToParts(date);
+    const month=Number(parts.find(part=>part.type==='month')?.value),day=Number(parts.find(part=>part.type==='day')?.value);
+    return {'1-1':'春节','1-15':'元宵节','5-5':'端午节','7-7':'七夕节','8-15':'中秋节','9-9':'重阳节','12-8':'腊八节'}[`${month}-${day}`]||'';
+  }catch{return '';}
+}
+const solarTermNames=['小寒','大寒','立春','雨水','惊蛰','春分','清明','谷雨','立夏','小满','芒种','夏至','小暑','大暑','立秋','处暑','白露','秋分','寒露','霜降','立冬','小雪','大雪','冬至'];
+const solarTermConstants=[5.4055,20.12,3.87,18.73,5.63,20.646,4.81,20.1,5.52,21.04,5.678,21.37,7.108,22.83,7.5,23.13,7.646,23.042,8.318,23.438,7.438,22.36,7.18,21.94];
+function solarTermFor(date=new Date()){
+  const year=date.getFullYear(),shortYear=year%100,terms=[];
+  solarTermNames.forEach((name,index)=>{const month=Math.floor(index/2);const day=Math.floor(shortYear*.2422+solarTermConstants[index])-Math.floor((shortYear-1)/4);terms.push({name,date:new Date(year,month,day)});});
+  const previous=[...terms].reverse().find(term=>term.date<=date)||{name:'冬至',date:new Date(year-1,11,21)};
+  return previous.name;
+}
+function regionForPlace(place=''){
+  if(/黑龙江|吉林|辽宁|东北|哈尔滨|长春|沈阳|大连/.test(place))return '东北';
+  if(/北京|天津|河北|山东|山西|内蒙古|石家庄|济南|青岛|烟台|太原|呼和浩特/.test(place))return '华北';
+  if(/上海|江苏|浙江|安徽|福建|江西|南京|苏州|无锡|杭州|宁波|温州|合肥|福州|厦门|泉州|南昌/.test(place))return '华东';
+  if(/广东|广西|海南|香港|澳门|广州|深圳|佛山|东莞|珠海|南宁|桂林|海口|三亚/.test(place))return '华南';
+  if(/河南|湖北|湖南|郑州|洛阳|武汉|长沙/.test(place))return '华中';
+  if(/四川|重庆|云南|贵州|西藏|成都|昆明|贵阳|拉萨/.test(place))return '西南';
+  if(/陕西|甘肃|宁夏|青海|新疆|西安|兰州|银川|西宁|乌鲁木齐/.test(place))return '西北';
+  return '';
+}
+function geoPosition(){return new Promise((resolve,reject)=>{if(!navigator.geolocation)return reject(new Error('浏览器不支持定位'));navigator.geolocation.getCurrentPosition(resolve,reject,{enableHighAccuracy:false,timeout:6500,maximumAge:30*60*1000});});}
+async function weatherAt(latitude,longitude){
+  const weatherData=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,weather_code&timezone=auto`).then(response=>{if(!response.ok)throw new Error('天气服务暂不可用');return response.json();});
+  const code=Number(weatherData?.current?.weather_code),weather=weatherLabels[code]||['🌡️','实时天气'];
+  return {weather:weather[1],weatherIcon:weather[0],temperature:Number.isFinite(Number(weatherData?.current?.temperature_2m))?Math.round(Number(weatherData.current.temperature_2m)):null};
+}
+function saveHomeContext(next){homeContext={...homeContext,...next,loading:false,error:false,locationError:'',savedAt:Date.now()};localStorage.setItem('home-context-cache',JSON.stringify(homeContext));if(state&&currentTab==='home')render();}
+async function loadHomeContext(force=false){
+  if(!force){try{const cached=JSON.parse(localStorage.getItem('home-context-cache')||'null');if(cached){homeContext={...homeContext,...cached,loading:false,error:false};if(state&&currentTab==='home')render();return;}}catch{}}
+  if(!force&&localStorage.getItem('home-location-attempted')){homeContext={...homeContext,loading:false,error:true};if(state&&currentTab==='home')render();if(!localStorage.getItem('home-location-prompted')){localStorage.setItem('home-location-prompted','1');setTimeout(()=>cityLocationModal(true),0);}return;}
+  localStorage.setItem('home-location-attempted','1');
+  homeContext={...homeContext,loading:true,error:false};if(state&&currentTab==='home')render();
+  try{
+    const position=await geoPosition();
+    let latitude=position.coords.latitude,longitude=position.coords.longitude,locationData;
+    const locationUrl=`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}&localityLanguage=zh`;
+    locationData=await fetch(locationUrl).then(response=>{if(!response.ok)throw new Error('定位服务暂不可用');return response.json();});
+    latitude=Number(latitude??locationData.latitude);longitude=Number(longitude??locationData.longitude);
+    const weather=Number.isFinite(latitude)&&Number.isFinite(longitude)?await weatherAt(latitude,longitude):{weather:'实时天气',weatherIcon:'🌡️',temperature:null};
+    const city=locationData.city||locationData.locality||locationData.principalSubdivision||'当前位置';
+    const province=locationData.principalSubdivision||'';
+    saveHomeContext({city,province,region:regionForPlace(`${province}${city}`),...weather,source:'auto'});
+  }catch(error){
+    homeContext={...homeContext,loading:false,error:true,weatherIcon:'📍',locationError:error?.code===1?'定位权限未开启':error?.code===3?'定位请求超时':error?.message||'无法读取当前位置'};
+    if(!localStorage.getItem('home-location-prompted')){localStorage.setItem('home-location-prompted','1');setTimeout(()=>cityLocationModal(true),0);}
+  }
+  if(state&&currentTab==='home')render();
+}
+async function chooseChinaCity(name){
+  const query=String(name||'').trim().replace(/市$/,'');if(!query)throw new Error('请输入城市名称');
+  if(!chinaCities.includes(query))throw new Error('请选择列表中的中国城市');
+  saveHomeContext({city:query,province:'',region:regionForPlace(query),weather:'天气待更新',weatherIcon:'🌡️',temperature:null,source:'manual'});
+  Promise.resolve().then(async()=>{
+    try{
+      const url=`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=10&language=zh&format=json&countryCode=CN`;
+      const data=await fetch(url).then(response=>{if(!response.ok)throw new Error('城市查询失败');return response.json();});
+      const place=(data.results||[]).find(item=>item.country_code==='CN'||item.country==='中国');
+      if(!place)return;
+      const weather=await weatherAt(place.latitude,place.longitude),city=place.name||query,province=place.admin1||'';
+      saveHomeContext({city,province,region:regionForPlace(`${province}${city}`),...weather,source:'manual'});
+    }catch{/* 城市已保存，天气失败时保留“待更新”。 */}
+  });
+  return false;
+}
+async function loadState(){const [saved,knowledge]=await Promise.all([api('/api/state'),api('/food_knowledge.json')]);state=saved;foodKnowledge=knowledge.foods||[];const merged=mergeInventoryItems(state.inventory||[]);state.inventory=merged.items;if(merged.changed)await persist();render();loadHomeContext();}
 async function persist(){state.inventory=mergeInventoryItems(state.inventory||[]).items;state=await api('/api/state',{method:'PUT',body:JSON.stringify({state})});}
 function toast(message){ toastNode.textContent=message; toastNode.classList.add('show'); setTimeout(()=>toastNode.classList.remove('show'),2600); }
 function headerContent(){
@@ -130,10 +207,19 @@ function headerContent(){
     header.innerHTML=`<div class="manual-entry-header-row"><button class="manual-header-back" data-action="back-to-inventory">‹ 返回冰箱</button></div><div class="manual-entry-title-row"><h1>食材录入</h1><button class="manual-header-custom" data-action="open-ai-entry">✦ AI录入</button></div>`;
     return;
   }
+  if(currentTab==='home'){
+    const now=new Date(),festival=chineseFestival(now),rawName=String(state?.profile?.name||'朋友').trim();
+    const name=/厨房|用户/.test(rawName)?'朋友':rawName;
+    const dateText=`今天是${now.getMonth()+1}月${now.getDate()}日！${festival?`是${festival}！`:''}`;
+    const weatherDetail=homeContext.loading?'正在定位…':homeContext.error?'点击重新定位':`${homeContext.weatherIcon} ${esc(homeContext.weather)}${homeContext.temperature===null?'':` ${homeContext.temperature}°`}`;
+    header.innerHTML=`<div class="home-header"><div class="home-brand"><p class="eyebrow">今天，先吃掉家里的好食材</p><h1>食光管家</h1></div><button type="button" class="home-weather" data-action="open-city-location" aria-label="修改城市定位"><strong>您好，${esc(name)}！</strong><small>${dateText}</small><span>⌖ ${esc(homeContext.city||'当前位置')} · ${weatherDetail}</span></button></div>`;
+    return;
+  }
   const headerAction=currentTab==='inventory'&&inventoryEntryView?'<button class="header-back-action" data-action="back-to-inventory">‹ 返回冰箱</button>':currentTab==='recipes'&&returnTab==='profile'&&!selectedRecipe?'<button class="header-back-action" data-action="back-to-profile">‹ 返回我的</button>':'';
   header.innerHTML=`<div class="topline"><div><p class="eyebrow">${sub}</p><h1>${title}</h1></div>${headerAction}</div>`;
 }
-function tags(tags=[]){return `<div class="tag-row">${tags.map((tag,i)=>`<span class="tag ${i===0?'green':''}">${esc(tag)}</span>`).join('')}</div>`;}
+function uniqueTags(values=[]){return [...new Set(values.map(value=>String(value||'').trim()).filter(Boolean))];}
+function tags(tags=[]){return `<div class="tag-row">${uniqueTags(tags).map((tag,i)=>`<span class="tag ${i===0?'green':''}">${esc(tag)}</span>`).join('')}</div>`;}
 function recipeCard(recipe){return `<button class="recipe-card" data-action="open-recipe" data-id="${esc(recipe.id)}"><div class="recipe-visual">${esc(recipe.imageEmoji||'🍲')}</div><div class="recipe-body"><h3>${esc(recipe.title)}</h3><div class="meta"><span>${esc(recipe.duration||30)} 分钟</span><span>·</span><span>${esc(recipe.difficulty||'简单')}</span><span>·</span><span>${esc(recipe.servings||2)} 人</span></div>${tags(recipe.tags||[])}</div></button>`;}
 // BEGIN HOMEPAGE-ONLY MODULE
 const homepage = (() => {
@@ -167,6 +253,7 @@ const recipeImageAssets = {
 };
 function recipeImage(recipe){
   if(/^assets\/generated\/[a-f0-9]{64}\.jpg$/.test(recipe.imageUrl||''))return recipe.imageUrl;
+  if(/^menu-\d{3}$/.test(recipe.id||''))return `assets/recipes/library/${recipe.id}.jpg`;
   if(recipe.imageUrl){try{const imageUrl=new URL(recipe.imageUrl);if(imageUrl.protocol==='https:'&&(imageUrl.hostname==='serpapi.com'||imageUrl.hostname.endsWith('.serpapi.com')||imageUrl.hostname.endsWith('.gstatic.com')||imageUrl.hostname.endsWith('.googleusercontent.com')))return imageUrl.href;}catch{}}
   if(recipeImageAssets[recipe.imageKey])return recipeImageAssets[recipe.imageKey];
   const ingredients=(recipe.ingredients||[]).map(item=>item.name||'').join(' ');
@@ -184,8 +271,93 @@ function recipeImage(recipe){
   return recipeImageAssets[key]||'';
 }
 function recipeCard(recipe){const image=recipeImage(recipe);return `<button type="button" class="recipe-card" data-home-action="open-daily-recommendation-preview" data-id="${esc(recipe.id)}"><div class="recipe-visual">${image?`<img class="recipe-image" src="${image}" alt="${esc(recipe.title)}" loading="lazy">`:`<span class="recipe-emoji">${esc(recipe.imageEmoji||'🍲')}</span>`}<span class="recipe-visual-label">按库存推荐</span></div><div class="recipe-body"><h3>${esc(recipe.title)}</h3><div class="meta"><span>${esc(recipe.duration||30)} 分钟</span><span>·</span><span>${esc(recipe.difficulty||'简单')}</span><span>·</span><span>${esc(recipe.servings||2)} 人</span></div>${tags(recipe.tags||[])}</div></button>`;}
-function inventoryBalance(inventory){let included=0;const countedItems=new Set();const groups=Object.fromEntries(nutritionGroups.map(group=>[group,{servings:0,foods:new Set(),items:[]} ]));for(const item of inventory){const profile=resolveFoodProfile(item.name);if(!profile)continue;const amount=Number(item.quantity);const rawUnit=String(item.unit||'').trim();const unit=({'克':'g','千克':'kg','毫升':'ml','升':'l'})[rawUnit]||rawUnit;if(!(amount>0))continue;const servings=profile.per?.[unit]?amount/profile.per[unit]:profile.count?.[unit]?amount*profile.count[unit]:0;if(!servings)continue;included++;countedItems.add(item);groups[profile.group].servings+=servings;groups[profile.group].foods.add(item.name);groups[profile.group].items.push({...item,estimatedServings:servings});}const confidence=inventory.length?included/inventory.length:0;const uncounted=inventory.filter(item=>!countedItems.has(item));if(!included||confidence<.6)return {score:null,confidence,included,total:inventory.length,groups,uncounted};const coverage=nutritionGroups.reduce((sum,g)=>sum+(groups[g].servings>0?10:0),0);const portions=nutritionGroups.reduce((sum,g)=>sum+6*Math.min(groups[g].servings/3,1),0);const variety=4*Math.min(new Set(nutritionGroups.flatMap(g=>[...groups[g].foods])).size,5);return {score:Math.min(100,Math.round(coverage+portions+variety)),confidence,included,total:inventory.length,groups,uncounted};}
+function inventoryBalance(inventory){
+  let included=0;
+  const countedItems=new Set();
+  const groups=Object.fromEntries(nutritionGroups.map(group=>[group,{servings:0,foods:new Set(),items:[]} ]));
+  for(const item of inventory){
+    const profile=resolveFoodProfile(item.name);
+    if(!profile)continue;
+    const amount=Number(item.quantity),rawUnit=String(item.unit||'').trim();
+    const unit=({'克':'g','千克':'kg','毫升':'ml','升':'l'})[rawUnit]||rawUnit;
+    if(!(amount>0))continue;
+    const servings=profile.per?.[unit]?amount/profile.per[unit]:profile.count?.[unit]?amount*profile.count[unit]:0;
+    if(!servings)continue;
+    included++;countedItems.add(item);
+    groups[profile.group].servings+=servings;
+    groups[profile.group].foods.add(item.name);
+    groups[profile.group].items.push({...item,estimatedServings:servings});
+  }
+  const confidence=inventory.length?included/inventory.length:0;
+  return {confidence,included,total:inventory.length,groups,uncounted:inventory.filter(item=>!countedItems.has(item))};
+}
 const nutritionColors=['#e8755b','#78a2d9','#8dbf79','#f2c864','#af91c6'];
+const nutrientColors=['#e8755b','#e3a44f','#78a2d9','#8dbf79','#5cae9f','#d9829a','#8794a8'];
+const nutrientDefinitions=[
+  {key:'energy',label:'能量',unit:'kcal',target:2000,kind:'range'},
+  {key:'carbs',label:'碳水化合物',unit:'g',target:300,kind:'range'},
+  {key:'protein',label:'蛋白质',unit:'g',target:60,kind:'minimum'},
+  {key:'fat',label:'脂肪',unit:'g',target:60,kind:'upper'},
+  {key:'fiber',label:'膳食纤维',unit:'g',target:25,kind:'minimum'},
+  {key:'addedSugar',label:'添加糖',unit:'g',target:25,kind:'upper'},
+  {key:'sodium',label:'钠',unit:'mg',target:2000,kind:'upper'}
+];
+const baseNutrients={energy:0,carbs:0,protein:0,fat:0,saturatedFat:0,fiber:0,addedSugar:0,sodium:0};
+function nutrientProfileFor(name){
+  const value=String(name||'').trim().replace(/冷藏|冷冻|新鲜|有机/g,'');
+  if(/白砂糖|绵白糖|冰糖|红糖|砂糖|蔗糖/.test(value))return {energy:400,carbs:100,addedSugar:100};
+  if(/食盐|盐$/.test(value))return {sodium:39300};
+  if(/生抽|老抽|酱油/.test(value))return {energy:60,carbs:7,protein:5,sodium:5600};
+  if(/油$|橄榄油|花生油|菜籽油/.test(value))return {energy:900,fat:100,saturatedFat:15};
+  if(/大米|米饭/.test(value))return {energy:346,carbs:77.9,protein:7.4,fat:.8,saturatedFat:.2,fiber:.7,sodium:3};
+  if(/鸡蛋|鸭蛋/.test(value))return {energy:144,carbs:2.8,protein:13.3,fat:8.8,saturatedFat:2.6,fiber:0,sodium:131};
+  if(/鸡胸|鸡肉/.test(value))return {energy:118,carbs:0,protein:24.6,fat:1.9,saturatedFat:.5,fiber:0,sodium:46};
+  if(/排骨|猪肉/.test(value))return {energy:278,carbs:0,protein:16.7,fat:23.1,saturatedFat:8.5,fiber:0,sodium:62};
+  if(/西兰花/.test(value))return {energy:36,carbs:4.3,protein:4.1,fat:.6,saturatedFat:.1,fiber:1.6,sodium:18};
+  if(/番茄|西红柿/.test(value))return {energy:15,carbs:3.3,protein:.9,fat:.2,saturatedFat:0,fiber:1,sodium:5};
+  if(/胡萝卜/.test(value))return {energy:39,carbs:8.8,protein:1,fat:.2,saturatedFat:0,fiber:2.8,sodium:71};
+  if(/牛奶|酸奶/.test(value))return {energy:60,carbs:5,protein:3,fat:3.2,saturatedFat:2,fiber:0,sodium:50};
+  if(/香蕉/.test(value))return {energy:93,carbs:22,protein:1.4,fat:.2,saturatedFat:0,fiber:1.2,sodium:1};
+  const group=resolveFoodProfile(value)?.group;
+  return {
+    '谷薯主食':{energy:350,carbs:75,protein:8,fat:2,saturatedFat:.4,fiber:3,sodium:10},
+    '蔬菜':{energy:30,carbs:5,protein:2,fat:.3,saturatedFat:.05,fiber:2.5,sodium:20},
+    '水果':{energy:55,carbs:13,protein:.8,fat:.3,saturatedFat:.05,fiber:2,sodium:3},
+    '蛋白质':{energy:150,carbs:3,protein:20,fat:7,saturatedFat:2,fiber:1,sodium:80},
+    '奶类':{energy:60,carbs:5,protein:3,fat:3,saturatedFat:1.8,fiber:0,sodium:50}
+  }[group]||null;
+}
+function consumedGrams(item,quantity){
+  const amount=Number(quantity),unit=String(item?.unit||'').trim();
+  if(!(amount>0))return null;
+  if(['g','克'].includes(unit))return amount;
+  if(unit==='kg'||unit==='千克')return amount*1000;
+  if(unit==='斤')return amount*500;
+  if(unit==='两')return amount*50;
+  if(['ml','毫升'].includes(unit))return amount;
+  if(unit==='l'||unit==='升')return amount*1000;
+  const perUnit=findFoodKnowledge(item?.name)?.units?.[unit];
+  if(perUnit)return amount*perUnit;
+  const totalGrams=Number(item?.estimatedGrams),totalQuantity=Number(item?.quantity);
+  return totalGrams>0&&totalQuantity>0?totalGrams*amount/totalQuantity:null;
+}
+function sevenDayNutrients(){
+  const totals={...baseNutrients};
+  const dates=new Set();let recognized=0;
+  const cutoff=Date.parse(`${today}T12:00:00`)-6*86400000;
+  for(const operation of state.cookOperations||[]){
+    const date=String(operation.createdAt||'').slice(0,10),time=Date.parse(`${date}T12:00:00`);
+    if(operation.undone||!Number.isFinite(time)||time<cutoff)continue;
+    for(const line of operation.consumption||[]){
+      const item=line.item,grams=consumedGrams(item,Number(line.quantity)),profile=nutrientProfileFor(item?.name);
+      if(!profile||!grams)continue;
+      nutrientDefinitions.forEach(metric=>{totals[metric.key]+=Number(profile[metric.key]||0)*grams/100;});
+      recognized++;dates.add(date);
+    }
+  }
+  const daily=Object.fromEntries(nutrientDefinitions.map(metric=>[metric.key,totals[metric.key]/7]));
+  return {totals,daily,recognized,daysRecorded:dates.size};
+}
 function estimatedPortions(item, quantity=Number(item.quantity)){
   const profile=resolveFoodProfile(item.name);
   if(!profile||!Number.isFinite(quantity)||quantity<=0)return null;
@@ -210,59 +382,42 @@ function todayRecordedPortions(){
   }
   return {amounts,recognized};
 }
-function nutritionBreakdown(balance){
-  const total=nutritionGroups.reduce((sum,group)=>sum+balance.groups[group].servings,0);
-  const recorded=todayRecordedPortions();
-  let position=0;
-  const arcs=nutritionGroups.map((group,index)=>{
-    const share=total>0?balance.groups[group].servings/total*100:0;
-    const start=position;position+=share;
-    return share>0?`${nutritionColors[index]} ${start.toFixed(2)}% ${position.toFixed(2)}%`:null;
-  }).filter(Boolean);
+function nutritionBreakdown(){
+  const recorded=sevenDayNutrients();
+  const metrics=nutrientDefinitions.filter(metric=>metric.key!=='energy');
+  const ratios=metrics.map(metric=>recorded.recognized?Math.min(1.5,recorded.daily[metric.key]/metric.target):0);
+  const ratioTotal=ratios.reduce((sum,value)=>sum+value,0);let position=0;
+  const shares=ratios.map(value=>ratioTotal?value/ratioTotal*100:0);
+  const arcs=shares.map((share,index)=>{const start=position;position+=share;return share>0?`${nutrientColors[index]} ${start.toFixed(2)}% ${position.toFixed(2)}%`:null;}).filter(Boolean);
   const chart=arcs.length?`conic-gradient(${arcs.join(',')})`:'#eee9e4';
-  const legend=nutritionGroups.map((group,index)=>{
-    const share=total>0?Math.round(balance.groups[group].servings/total*100):0;
-    return `<div class="nutrition-legend-item"><i style="background:${nutritionColors[index]}"></i><span>${group}</span><b>${share}%</b></div>`;
+  const rows=metrics.map((metric,index)=>{
+    const value=recorded.daily[metric.key];
+    let status='暂无数据',statusClass='neutral';
+    if(recorded.recognized){
+      const ratio=value/metric.target;
+      const met=metric.kind==='upper'?ratio<=1:metric.kind==='minimum'?ratio>=.8:ratio>=.8&&ratio<=1.2;
+      status=met?'达标':metric.kind==='upper'&&ratio>1?'偏高':'不足';statusClass=met?'met':'unmet';
+    }
+    const shown=metric.unit==='mg'?Math.round(value):Number(value.toFixed(1));
+    return `<div class="nutrition-metric ${statusClass}"><i style="background:${nutrientColors[index]}"></i><span><strong>${metric.label}</strong><small>${recorded.recognized?`${shown}${metric.unit}/日 · 占图 ${Math.round(shares[index])}%`:'尚无可计算记录'}</small></span><b>${status}</b></div>`;
   }).join('');
-  const rows=nutritionGroups.map((group,index)=>{
-    const amount=recorded.amounts[group];
-    const progress=Math.min(100,amount/3*100);
-    const label=recorded.recognized?`${Number(amount.toFixed(1))} / 3 份`:'暂无数据';
-    return `<div class="nutrition-progress-item"><div><i style="background:${nutritionColors[index]}"></i><span>${group}</span><b>${label}</b></div><span class="nutrition-progress-track"><span style="width:${progress.toFixed(1)}%;background:${nutritionColors[index]}"></span></span></div>`;
-  }).join('');
-  return `<div class="nutrition-breakdown"><div class="nutrition-share"><div class="nutrition-share-title"><strong>库存类别占比</strong><button data-action="open-guide-reference">官方推荐占比</button></div><div class="nutrition-donut" style="background:${chart}" role="img" aria-label="当前库存各类别估算份数占比"><span>库存<br>构成</span></div><div class="nutrition-legend">${legend}</div></div><div class="nutrition-intake"><strong>今日食材消耗记录</strong><p>与每类 3 份参考目标比较</p>${rows}</div></div>`;
+  const energy=recorded.recognized?`${Math.round(recorded.daily.energy)} kcal/日`:'暂无可计算记录';
+  return `<div class="nutrition-energy-row"><span>近7天日均能量</span><strong>${energy}</strong><small>单独展示，不计入营养成分占比</small></div><div class="nutrition-breakdown"><div class="nutrition-donut" style="background:${chart}" role="img" aria-label="过去七天主要营养成分参考值归一化占比"><span aria-hidden="true"></span></div><div class="nutrition-metric-list">${rows}</div></div><p class="nutrition-chart-note">环图按各项日均摄入相对参考值换算后展示，便于比较不同单位的营养成分；未记录的餐食不计入。</p>`;
 }
 function dietGuideReferenceModal(){
-  const balance=inventoryBalance(state.inventory||[]);
-  const currentTotal=nutritionGroups.reduce((sum,group)=>sum+(Number(balance.groups[group]?.servings)||0),0);
-  const guideServings={'谷薯主食':6.5,'蔬菜':3,'水果':275/150,'蛋白质':1.6,'奶类':1.2};
-  const guideTotal=nutritionGroups.reduce((sum,group)=>sum+guideServings[group],0);
-  const gradientFor=(values,total)=>{
-    if(!total)return '#eee9e4';
-    let position=0;
-    const stops=nutritionGroups.map((group,index)=>{
-      const share=values[group]/total*100;
-      const start=position;position+=share;
-      return share>0?`${nutritionColors[index]} ${start.toFixed(2)}% ${position.toFixed(2)}%`:null;
-    }).filter(Boolean);
-    return stops.length?`conic-gradient(${stops.join(',')})`:'#eee9e4';
-  };
-  const currentValues=Object.fromEntries(nutritionGroups.map(group=>[group,Number(balance.groups[group]?.servings)||0]));
-  const currentGradient=gradientFor(currentValues,currentTotal);
-  const guideGradient=gradientFor(guideServings,guideTotal);
-  const rows=nutritionGroups.map((group,index)=>{
-    const current=currentTotal?Math.round(currentValues[group]/currentTotal*100):0;
-    const guide=Math.round(guideServings[group]/guideTotal*100);
-    return `<div class="guide-reference-row"><i style="background:${nutritionColors[index]}"></i><span>${group}</span><b>库存 ${current}%</b><em>参考 ${guide}%</em></div>`;
+  const labels={carbs:'约',protein:'约',fat:'建议不超过',fiber:'至少',addedSugar:'最好不超过',sodium:'建议不超过'};
+  const rows=nutrientDefinitions.filter(metric=>metric.key!=='energy').map((metric,index)=>{
+    const amount=metric.target*7;
+    return `<div class="weekly-reference-row"><i style="background:${nutrientColors[index]}"></i><span><strong>${metric.label}</strong><small>${labels[metric.key]} ${amount}${metric.unit}/7天</small></span></div>`;
   }).join('');
-  modal(`<h2>官方推荐占比参考</h2><p class="guide-reference-intro">将当前库存结构与膳食指南建议量放在一起，方便观察类别差异。</p><div class="guide-donut-compare"><div><strong>当前库存</strong><div class="nutrition-donut" style="background:${currentGradient}"><span>库存<br>构成</span></div></div><div><strong>指南参考</strong><div class="nutrition-donut" style="background:${guideGradient}"><span>建议量<br>换算</span></div></div></div><div class="guide-reference-list">${rows}</div><div class="guide-reference-source"><strong>换算依据</strong><p>成年人每日：谷类 200～300g、薯类 50～100g；蔬菜不少于 300g；水果 200～350g；鱼禽肉蛋 120～200g；奶制品相当于液态奶 300ml 以上。图中取区间中值或最低建议量，再按本页“份”口径归一化，属于对照换算，并非指南发布的原始百分比。</p><a href="https://dg.cnsoc.org/article/04/J4-AsD_DR3OLQMnHG0-jZA.html" target="_blank" rel="noopener">来源：《中国居民膳食指南（2022）》</a></div><div class="modal-actions"><button type="button" class="primary-button" data-action="close-modal">知道了</button></div>`);
+  modal(`<div class="weekly-reference-modal"><button type="button" class="modal-close" aria-label="关闭" data-action="close-modal">×</button><h2>官方推荐营养摄入量</h2><p class="guide-reference-intro">按普通成年人每日参考值换算为 7 天总量，个人需要会随年龄、性别和活动量变化。</p><div class="weekly-reference-list">${rows}</div><div class="guide-reference-source"><strong>参考依据</strong><p>蛋白质、脂肪、碳水化合物和钠采用营养素参考值；膳食纤维与添加糖采用居民膳食建议。这里只用于日常观察。</p><a href="https://www.cnsoc.org/bookpublica/612410201.html" target="_blank" rel="noopener">《中国居民膳食营养素参考摄入量》</a><br><a href="https://www.nhc.gov.cn/sps/c100087/202509/470fa4ff5de14dd38619223cce9da4e7.shtml" target="_blank" rel="noopener">《预包装食品营养标签通则》问答</a></div></div>`);
 }
-function nutritionHealthCard(balance) {
-  const available = balance.score !== null;
+function nutritionHealthCard() {
   return `<section class="card health-card">
-    <div class="health-heading"><div><span class="eyebrow">仅统计冰箱现有食材</span><h2>库存营养均衡度</h2></div><strong class="health-score">${available ? `${balance.score}<small> / 100</small>` : '--'}</strong></div>
-    ${available ? `<div class="health-track"><span style="width:${balance.score}%"></span></div><p>类别覆盖 ${nutritionGroups.filter(group=>balance.groups[group].servings>0).length}/${nutritionGroups.length} 类 · 已识别 ${balance.included}/${balance.total} 种食材</p><details class="nutrition-details"><summary class="nutrition-action">查看库存构成</summary>${nutritionBreakdown(balance)}<p class="nutrition-chart-note">库存占比按现有食材估算，进度仅统计今日烹饪扣库，不代表实际摄入。</p></details>` : `<p>目前可识别 ${balance.included}/${balance.total} 种食材，数据不足，暂不评分。</p><button class="nutrition-action" data-tab-go="inventory">补全库存</button>`}
-    <p class="nutrition-disclaimer">仅供参考。</p>
+    <div class="health-heading"><div><span class="eyebrow">基于已确认的烹饪消耗</span><h2>近7天营养构成</h2></div><button type="button" class="nutrition-reference-button" data-action="open-guide-reference">官方推荐摄入量</button></div>
+    ${nutritionBreakdown()}
+    <p class="nutrition-source">参考：《食品安全国家标准 预包装食品营养标签通则》《中国居民膳食营养素参考摄入量》</p>
+    <p class="nutrition-disclaimer">脂肪数值包含饱和脂肪；食材营养值为估算，仅供日常观察，不替代专业营养评估。</p>
   </section>`;
 }
 function recentConsumptionByGroup(days=14){
@@ -280,6 +435,21 @@ function recentConsumptionByGroup(days=14){
   }
   return totals;
 }
+function seasonalDishTip(){
+  const term=solarTermFor(new Date()),region=homeContext.region||'';
+  const north=['东北','华北','西北'].includes(region),south=['华东','华南','西南'].includes(region);
+  const index=solarTermNames.indexOf(term),season=index>=2&&index<=7?'spring':index>=8&&index<=13?'summer':index>=14&&index<=19?'autumn':'winter';
+  const choices={
+    spring:north?['韭菜鸡蛋','菠菜豆腐汤']:['春笋炒肉','荠菜鸡蛋羹'],
+    summer:north?['凉拌黄瓜','冬瓜丸子汤']:['冬瓜薏米汤','清蒸时蔬'],
+    autumn:north?['莲藕排骨汤','南瓜小米粥']:['山药木耳','莲藕炖鸡'],
+    winter:north?['白菜豆腐煲','萝卜炖牛肉']:['白萝卜排骨汤','菌菇青菜煲']
+  }[season];
+  const avoided=[...(state.preferences?.avoid||[]),...(state.preferences?.allergies||[])].map(String).filter(Boolean);
+  const dish=choices.find(item=>!avoided.some(food=>item.includes(food)))||'温热的时令蔬菜汤';
+  const context=[homeContext.temperature===null?'':homeContext.temperature<=10?'天气偏凉':homeContext.temperature>=28?'天气偏热':''].filter(Boolean).join('，');
+  return `${term}时节，${context?`${context}，`:''}可以试试${dish}。`;
+}
 function nutritionRecommendation(balance,shopping=[]){
   const month=new Date().getMonth()+1;
   const season=month>=3&&month<=5?'春日':month>=6&&month<=8?'夏天':month>=9&&month<=11?'秋日':'冬日';
@@ -290,9 +460,9 @@ function nutritionRecommendation(balance,shopping=[]){
   const avoid=[...(preferences.avoid||[]),...(preferences.allergies||[])].map(String);
   const preferenceText=[...flavors,...needs].join(' ');
   const avoidText=avoid.join(' ');
-  if(balance.score===null){
+  if(!balance.included||balance.confidence<.6){
     const preferenceHint=flavors[0]?`，也会照顾你喜欢的${flavors[0]}口味`:'';
-    return {text:balance.total?`🫘 ${season}也要吃得丰富些呀！把食材数量补完整${preferenceHint}，这里就能给出更贴心的采购提醒。`:`🫘 ${season}记得给冰箱添点喜欢的食材呀！录入库存后，系统会结合你的饮食偏好给出建议。`};
+    return {text:balance.total?`🫘 ${seasonalDishTip()} 把食材数量补完整${preferenceHint}，提醒会更贴心。`:`🫘 ${seasonalDishTip()} 录入库存后，还会结合你的偏好继续调整。`};
   }
 
   const planned=new Set(shopping.filter(item=>item.status==='pending').map(item=>resolveFoodProfile(item.name)?.group).filter(Boolean));
@@ -328,7 +498,7 @@ function nutritionRecommendation(balance,shopping=[]){
   const picks=ranked.filter(item=>item.score>0.12).slice(0,2).map(item=>item.group);
 
   if(!picks.length){
-    return {text:`🫘 ${season}的采购安排已经很周到啦！先把清单里的食材买齐，再按家里的消耗慢慢补充就好。`};
+    return {text:`🫘 ${seasonalDishTip()} 采购安排已经很周到啦，先把清单里的食材买齐就好。`};
   }
 
   const categoryText=picks.map(group=>labels[group]).join('和');
@@ -341,63 +511,27 @@ function nutritionRecommendation(balance,shopping=[]){
   ];
   const seed=[today,...picks,...flavors,...needs].join('').split('').reduce((sum,char)=>sum+char.charCodeAt(0),0);
   const main=variants[seed%variants.length];
-  return {text:expiryLead?`${main} ${expiryLead}`:main};
-}
-function dailyDietReview(){
-  const totals=Object.fromEntries(nutritionGroups.map(group=>[group,0]));
-  const operations=(state.cookOperations||[]).filter(operation=>!operation.undone&&String(operation.createdAt||'').slice(0,10)===today);
-  let recognized=0;
-  operations.forEach(operation=>{
-    (operation.consumption||[]).forEach(line=>{
-      if(!line.item)return;
-      const portion=estimatedPortions(line.item,Number(line.quantity));
-      if(!portion)return;
-      totals[portion.group]+=portion.servings;
-      recognized++;
-    });
-  });
-  const activeGroups=nutritionGroups.filter(group=>totals[group]>0);
-  const ranked=[...activeGroups].sort((a,b)=>totals[b]-totals[a]);
-  const labels={'谷薯主食':'主食类','蔬菜':'蔬菜类','水果':'水果类','蛋白质':'蛋白质类','奶类':'奶类'};
-  let summary='今天还没有烹饪记录。完成做饭并确认用量后，这里会生成当天复盘。';
-  if(operations.length){
-    const main=ranked.slice(0,2).map(group=>labels[group]).join('和');
-    const missing=nutritionGroups.filter(group=>totals[group]===0);
-    if(!recognized)summary=`今天记录了 ${operations.length} 次烹饪，不过还缺少实际用量，确认消耗后就能生成更完整的复盘。`;
-    else if(missing.length)summary=`今天记录了 ${operations.length} 次烹饪，主要包含${main||'多类食材'}。下一餐可以适当搭配${labels[missing[0]]}，吃得更丰富些呀！`;
-    else summary=`今天记录了 ${operations.length} 次烹饪，五类食材都有出现，整体搭配很丰富，继续保持呀！`;
-  }
-  return {operations,totals,activeGroups,recognized,summary};
-}
-function dailyDietReviewModal(){
-  const review=dailyDietReview();
-  const rows=nutritionGroups.map((group,index)=>{
-    const value=review.totals[group];
-    const label=value?Number(value.toFixed(1))+' 份':'暂无记录';
-    return `<div class="daily-review-detail-row"><i style="background:${nutritionColors[index]}"></i><span>${group}</span><b>${label}</b></div>`;
-  }).join('');
-  modal(`<h2>今日饮食复盘</h2><div class="daily-review-modal-summary"><div><b>${review.operations.length}</b><span>次烹饪</span></div><div><b>${review.activeGroups.length}</b><span>类食材</span></div><div><b>${review.recognized}</b><span>项消耗记录</span></div></div><p class="daily-review-modal-copy">${review.summary}</p><div class="daily-review-detail">${rows}</div><p class="form-hint">仅统计今天已确认的烹饪扣库记录，不代表实际营养摄入，仅供参考。</p><div class="modal-actions"><button type="button" class="primary-button" data-action="close-modal">知道了</button></div>`);
+  return {text:`🫘 ${seasonalDishTip()} ${expiryLead||main}`};
 }
 function renderHome(){
   const expiring=state.inventory.filter(item=>freshnessFor(item).key==='soon');
   const pending=state.shopping.filter(item=>item.status==='pending');
-  const recipes=agentResult?.recipes||state.recipes||[];
+  const recipes=dailyRecommendationRecipes();
   const balance=inventoryBalance(state.inventory);
   const tip=nutritionRecommendation(balance,pending);
-  const review=dailyDietReview();
   const nearestExpiring=[...expiring].sort((a,b)=>inventoryAgeDays(b)-inventoryAgeDays(a)).slice(0,2);
   const expiryRows=nearestExpiring.map(item=>`<span class="expiry-item"><strong>${esc(item.name)}</strong><small>${esc(freshnessFor(item).label)}</small></span>`).join('');
   return `<div class="home-page"><div class="home-shortcuts"><button class="home-shortcut expiry-shortcut" data-tab-go="inventory"><span class="shortcut-icon">◷</span><span><strong>需优先处理</strong>${expiring.length?`<span class="expiry-preview">${expiryRows||'<small>查看库存记录</small>'}</span>`:'<small>暂时没有需优先处理的食材</small>'}</span><b>›</b></button><button class="home-shortcut shopping-shortcut" data-tab-go="shopping"><span class="shortcut-icon">🧺</span><span><strong>采购清单</strong><small>${pending.length?`还有 ${pending.length} 项待买`:'清单目前为空'}</small></span><b>›</b></button></div>
-  ${nutritionHealthCard(balance)}
-  <div class="section-title"><h2>每日推荐</h2><button data-tab-go="recipes">查看全部</button></div>
-  ${recipes.length?`<div class="recipe-scroll">${recipes.slice(0,3).map(recipeCard).join('')}</div>`:'<section class="card empty daily-empty"><span class="empty-icon">🍳</span><b>今天吃点什么？</b><span>根据现有食材生成每日菜品推荐。</span><button class="secondary-button" data-action="quick-ask" data-question="根据我的库存推荐今天的菜">问问厨房管家</button></section>'}
   <section class="card agent-card"><div class="agent-intro"><div class="agent-avatar">✦</div><div><strong>问问厨房管家</strong><p>我会优先为你消耗现有和临期食材</p></div></div><form class="ask-row" id="ask-form"><input id="agent-question" required placeholder="例如：30 分钟做两人晚餐" /><button type="submit">提问</button></form><div class="quick-chips">${['优先用掉快过期食材','30 分钟做两人晚餐','看看我还缺什么'].map((q,i)=>`<button class="chip" data-action="quick-ask" data-quick-mode="${['expiry','dinner','shopping'][i]}" data-question="${q}">${q}</button>`).join('')}</div></section>
   ${agentLoading?'<section class="card loading"><span class="spinner"></span>厨房管家正在分析你的库存与偏好…</section>':''}
   ${agentResult?agentPanel(agentResult):''}
-  <div class="section-title"><h2>饮食小提示</h2></div><section class="card diet-tip-card"><p class="result-summary diet-tip-text">${tip.text}</p><p class="meta diet-tip-note">按库存整理，仅供参考</p><button class="tip-shopping-button" data-tab-go="shopping">进入采购</button></section>
-  <div class="section-title daily-review-title"><h2>今日饮食复盘</h2><span class="meta">今天</span></div><section class="card daily-review-card"><div class="daily-review-heading"><span class="daily-review-icon">↗</span><p>${review.summary}</p></div>${review.operations.length?`<div class="daily-review-stats"><span><b>${review.operations.length}</b> 次烹饪</span><span><b>${review.activeGroups.length}</b> 类食材</span><span><b>${review.recognized}</b> 项记录</span></div>`:''}<button class="daily-review-action" data-action="open-daily-review">查看今日详情 <b>›</b></button><p class="meta daily-review-note">仅基于今天已确认的烹饪记录，仅供参考</p></section></div>`;
+  ${nutritionHealthCard()}
+  <div class="section-title"><h2>每日推荐</h2></div>
+  ${recipes.length?`<div class="recipe-scroll daily-recommendation-scroll">${recipes.map(recipeCard).join('')}</div>`:'<section class="card empty daily-empty"><span class="empty-icon">🍳</span><b>今天吃点什么？</b><span>当前还没有合适的菜品推荐。</span></section>'}
+  <button type="button" class="dinner-wheel-entry" data-action="open-dinner-wheel">不知道吃什么？点击这里！</button>
+  <div class="section-title"><h2>饮食小提示</h2></div><section class="card diet-tip-card"><p class="result-summary diet-tip-text">${tip.text}</p><p class="meta diet-tip-note">按库存整理，仅供参考</p><button class="tip-shopping-button" data-tab-go="shopping">进入采购</button></section></div>`;
 }
-return {render:renderHome,recipeImage,openDailyReview:dailyDietReviewModal,openGuideReference:dietGuideReferenceModal};
+return {render:renderHome,recipeImage,openGuideReference:dietGuideReferenceModal};
 })();
 // END HOMEPAGE-ONLY MODULE
 
@@ -410,7 +544,9 @@ function libraryRecipeFor(recipe){
 }
 function canonicalFoodName(name){
   const value=String(name||'').trim();
-  return findFoodKnowledge(value)?.canonical_name||value;
+  const canonical=findFoodKnowledge(value)?.canonical_name||value;
+  if(/^(三黄鸡|整鸡|白条鸡|鸡胸肉|鸡腿肉|鸡腿|鸡翅|鸡肉)$/.test(canonical))return '鸡肉';
+  return canonical;
 }
 function usableStockFor(name){
   const canonical=canonicalFoodName(name);
@@ -444,11 +580,61 @@ function recipeExpiryPriority(recipe){
   const earliest=soon.reduce((days,item)=>Math.min(days,item.expiryDate?Math.max(0,Math.round((Date.parse(item.expiryDate)-Date.parse(today))/86400000)):999),999);
   return {count:soon.length,earliest};
 }
+function festivalBanquetScore(recipe){
+  const festival=chineseFestival(new Date());if(!festival)return 0;
+  const text=[recipe.title,recipe.subtitle,...(recipe.tags||[]),...(recipe.mealTypes||[]),recipe.region].flat().join(' ');
+  const keywords={春节:/家宴|年夜|饺子|鱼|年糕|鸡|团圆/,元宵节:/汤圆|元宵|家宴/,端午节:/粽|家宴|蒸鱼|排骨/,中秋节:/家宴|团圆|芋头|鸭|鱼/,重阳节:/家宴|蒸菜|菊花|糕/}[festival];
+  return keywords?.test(text)?2:/家宴|团圆/.test(text)?1:0;
+}
+function regionalRecipeScore(recipe){
+  const region=homeContext.region;if(!region)return 0;
+  const declared=[recipe.region,...(recipe.regions||[]),...(recipe.tags||[])].flat().join(' ');
+  if(declared.includes(region))return 3;
+  const text=`${recipe.title||''} ${recipe.subtitle||''} ${declared}`;
+  const patterns={东北:/东北|锅包|地三鲜|乱炖|酸菜/,华北:/京味|北京|津味|鲁菜|山东|山西|河北|面食|饺子/,华东:/江浙|本帮|上海|苏式|杭帮|宁波|徽菜|福建|闽菜/,华南:/粤菜|广式|潮汕|客家|海南|广西/,华中:/湘菜|湖南|湖北|河南|楚味/,西南:/川菜|重庆|云南|贵州|酸汤|麻辣/,西北:/陕西|西安|甘肃|宁夏|青海|新疆|羊肉/};
+  return patterns[region]?.test(text)?2:0;
+}
 function sortAgentRecipes(recipes){
   return [...recipes].sort((left,right)=>{
     const a=recipeExpiryPriority(left),b=recipeExpiryPriority(right);
-    return b.count-a.count||a.earliest-b.earliest||recipeMissingItems(left).length-recipeMissingItems(right).length;
+    const missingDifference=recipeMissingItems(left).length-recipeMissingItems(right).length;
+    const stockDifference=recipeStockMatchCount(right)-recipeStockMatchCount(left);
+    return missingDifference||b.count-a.count||a.earliest-b.earliest||stockDifference||festivalBanquetScore(right)-festivalBanquetScore(left)||regionalRecipeScore(right)-regionalRecipeScore(left);
   });
+}
+function recipeStockMatchCount(recipe){
+  return (libraryRecipeFor(recipe)?.ingredients||recipe?.ingredients||[]).filter(item=>item?.name&&usableStockFor(item.name).length>0).length;
+}
+function dailyRecommendationRecipes(){
+  const avoided=[...(state.preferences?.allergies||[]),...(state.preferences?.avoid||[])].map(canonicalFoodName).filter(Boolean);
+  const safe=recipe=>(recipe.ingredients||[]).every(item=>{
+    const name=canonicalFoodName(item.name);
+    return !avoided.some(food=>name.includes(food)||food.includes(name));
+  })&&!avoided.some(food=>canonicalFoodName(recipe.title).includes(food));
+  const library=typeof recipeLibrary==='undefined'?[]:recipeLibrary;
+  const source=library.length?library:(state.recipes||[]);
+  return sortAgentRecipes(source.filter(safe)).slice(0,5).map(recipe=>({
+    ...recipe,
+    tags:uniqueTags([...(festivalBanquetScore(recipe)?['节日家宴']:[]),...(regionalRecipeScore(recipe)?[`${homeContext.region}风味`]:[]),...(recipeExpiryPriority(recipe).count?['临期优先']:[]),recipeMissingItems(recipe).length?'少量补购':'库存充足']),
+    ingredients:(recipe.ingredients||[]).map(item=>({...item,available:usableStockFor(item.name).length>0}))
+  }));
+}
+function dinnerWheelCandidates(){
+  const avoided=[...(state.preferences?.allergies||[]),...(state.preferences?.avoid||[])].map(canonicalFoodName).filter(Boolean);
+  const dailyIds=new Set(dailyRecommendationRecipes().map(recipe=>recipe.id));
+  const source=typeof recipeLibrary==='undefined'?[]:recipeLibrary;
+  return sortAgentRecipes(source.filter(recipe=>!dailyIds.has(recipe.id)&&!avoided.some(food=>canonicalFoodName(recipe.title).includes(food)||(recipe.ingredients||[]).some(item=>{const name=canonicalFoodName(item.name);return name.includes(food)||food.includes(name);}))))
+    .map(recipe=>({...recipe,ingredients:(recipe.ingredients||[]).map(item=>({...item,available:usableStockFor(item.name).length>0}))}));
+}
+function dinnerWheelModal(reset=false){
+  let candidates=dinnerWheelCandidates();
+  if(reset||!dinnerWheelRecipes.length||dinnerWheelRecipes.every(recipe=>dinnerWheelUsed.has(recipe.id))){
+    if(dinnerWheelRecipes.length)dinnerWheelUsed=new Set();
+    const withoutLast=candidates.filter(recipe=>recipe.id!==dinnerWheelLastRecipeId);
+    dinnerWheelRecipes=(withoutLast.length>=8?withoutLast:candidates).slice(0,8);
+  }
+  const options=dinnerWheelRecipes.map((recipe,index)=>`<span class="wheel-option ${dinnerWheelUsed.has(recipe.id)?'used':''}" style="--i:${index}">${esc(recipe.title)}</span>`).join('');
+  modal(`<div class="dinner-wheel-modal"><button type="button" class="modal-close" aria-label="关闭" data-action="close-modal">×</button><p class="eyebrow">今天吃什么</p><h2>随机转盘</h2><p class="dinner-wheel-copy">转一下，看看今天吃什么吧！</p><div class="dinner-wheel" aria-label="晚餐随机转盘">${options}<i class="wheel-pointer"></i><button type="button" data-action="spin-dinner-wheel" ${dinnerWheelRecipes.length?'':'disabled'}>转一下</button></div><p class="dinner-wheel-result" id="dinner-wheel-result">${dinnerWheelRecipes.length?'准备好了吗？':'暂时没有符合偏好的菜谱'}</p></div>`);
 }
 function fallbackAgentResult(mode,previousTitles=[]){
   const avoided=[...(state.preferences?.allergies||[]),...(state.preferences?.avoid||[])].map(canonicalFoodName).filter(Boolean);
@@ -456,9 +642,14 @@ function fallbackAgentResult(mode,previousTitles=[]){
     const name=canonicalFoodName(item.name);
     return !avoided.some(food=>name.includes(food)||food.includes(name));
   })&&!avoided.some(food=>canonicalFoodName(recipe.title).includes(food));
-  let candidates=(typeof recipeLibrary==='undefined'?[]:recipeLibrary).filter(safe);
+  const allCandidates=(typeof recipeLibrary==='undefined'?[]:recipeLibrary).filter(safe);
+  let candidates=[...allCandidates],usedExpiryMatch=false;
   if(mode==='dinner')candidates=candidates.filter(recipe=>(recipe.mealTypes||[]).includes('dinner')&&Number(recipe.duration)<=30);
-  if(mode==='expiry')candidates=candidates.filter(recipe=>recipeExpiryPriority(recipe).count>0);
+  if(mode==='expiry'){
+    const expiryMatches=candidates.filter(recipe=>recipeExpiryPriority(recipe).count>0);
+    if(expiryMatches.length){candidates=expiryMatches;usedExpiryMatch=true;}
+    else candidates=[...allCandidates];
+  }
   candidates=sortAgentRecipes(candidates);
   if(previousTitles.length){
     const different=candidates.filter(recipe=>!previousTitles.includes(recipe.title));
@@ -466,9 +657,10 @@ function fallbackAgentResult(mode,previousTitles=[]){
   }
   const recipes=candidates.slice(0,2).map(recipe=>{
     const missing=recipeMissingItems(recipe);
-    return {...recipe,reason:'熟悉的家常做法，适合今天在家做。',tags:[...(recipeExpiryPriority(recipe).count?['临期优先']:[]),missing.length?'需要补购':'库存充足'],ingredients:(recipe.ingredients||[]).map(item=>({...item,available:usableStockFor(item.name).length>0}))};
+    return {...recipe,reason:usedExpiryMatch?'优先使用仍可食用的临期食材。':'结合所在地域和你的饮食偏好推荐。',tags:uniqueTags([...(recipeExpiryPriority(recipe).count?['临期优先']:[]),...(regionalRecipeScore(recipe)?[`${homeContext.region}风味`]:[]),missing.length?'需要补购':'库存充足']),ingredients:(recipe.ingredients||[]).map(item=>({...item,available:usableStockFor(item.name).length>0}))};
   });
-  return {recipes,alerts:[],shopping:recipes.length?recipeMissingItems(recipes[0]).map(item=>({...item,quantity:item.suggestedQuantity})):[],emptyMessage:mode==='expiry'?'目前没有可安全使用的临期食材，可以看看其他菜谱。':'暂时没有合适的两人晚餐菜谱，可以换个条件试试。'};
+  const emptyMessage=mode==='expiry'?'菜谱库暂时没有符合忌口条件的菜谱，可以调整偏好后再试试。':'暂时没有合适的两人晚餐菜谱，可以换个条件试试。';
+  return {recipes,alerts:[],shopping:recipes.length?recipeMissingItems(recipes[0]).map(item=>({...item,quantity:item.suggestedQuantity})):[],emptyMessage};
 }
 function recommendationShoppingModal(recipe){
   recommendationShoppingDraft=recipe?recipeMissingItems(recipe):(agentResult?.shopping||[]).map(item=>({...item,suggestedQuantity:Number(item.quantity)||1,unit:item.unit||'个',category:item.category||'其他'}));
@@ -486,7 +678,7 @@ function recommendationCard(recipe,index){
   const visual=image?'<img class="recipe-image" src="'+esc(image)+'" alt="'+esc(recipe.title)+'" loading="lazy">':'<span class="recipe-emoji">'+esc(recipe.imageEmoji||'🍲')+'</span>';
   return '<button type="button" class="recipe-card" data-home-action="open-recommendation-preview" data-index="'+index+'"><div class="recipe-visual">'+visual+'<span class="recipe-visual-label">为你推荐</span></div><div class="recipe-body"><h3>'+esc(recipe.title)+'</h3><div class="meta"><span>'+esc(recipe.duration||30)+' 分钟</span><span>·</span><span>'+esc(recipe.difficulty||'简单')+'</span></div>'+tags(recipe.tags||[])+'</div></button>';
 }
-function recommendationPreview(recipe,sourceLabel='为你推荐'){
+function recommendationPreview(recipe,sourceLabel='为你推荐',options={}){
   const library=libraryRecipeFor(recipe);
   const details=library||recipe;
   const image=homepage.recipeImage(details);
@@ -497,7 +689,8 @@ function recommendationPreview(recipe,sourceLabel='为你推荐'){
   const photo=image?'<img src="'+esc(image)+'" alt="'+esc(recipe.title)+'" loading="lazy">':'<span aria-label="菜品图片待补充">'+esc(recipe.imageEmoji||'🍲')+'</span>';
   const buy=recipeMissingItems(recipe).length?'<button type="button" class="primary-button" data-action="open-recommendation-shopping" data-recipe-id="'+esc(recipe.id)+'">采购缺少食材</button>':'';
   const next=(library?'<button type="button" class="primary-button" data-action="open-recipe" data-id="'+esc(library.id)+'">查看完整菜谱 ›</button>':'<p>这道菜暂未录入菜谱，先看看上面的简要做法吧。</p>')+buy;
-  modal('<div class="home-recommendation-modal"><button type="button" class="modal-close" aria-label="关闭" data-action="close-modal">×</button><p class="eyebrow">'+esc(sourceLabel)+'</p><h2>'+esc(recipe.title||'这道菜')+'</h2><div class="home-recommendation-copy"><strong>需要的食材</strong><p>'+esc(ingredientNames.length?ingredientNames.join('、'):'食材信息暂未补齐')+'</p><strong>做法概览</strong><p>'+esc(method||'做法信息暂未补齐')+'</p></div><div class="home-recommendation-footer"><div class="home-recommendation-image">'+photo+'</div><div class="home-recommendation-next">'+next+'</div></div></div>');
+  const closeAction=options.returnToWheel?'back-to-dinner-wheel':'close-modal';
+  modal('<div class="home-recommendation-modal"><button type="button" class="modal-close" aria-label="关闭" data-action="'+closeAction+'">×</button><p class="eyebrow">'+esc(sourceLabel)+'</p><h2>'+esc(recipe.title||'这道菜')+'</h2><div class="home-recommendation-copy"><strong>需要的食材</strong><p>'+esc(ingredientNames.length?ingredientNames.join('、'):'食材信息暂未补齐')+'</p><strong>做法概览</strong><p>'+esc(method||'做法信息暂未补齐')+'</p></div><div class="home-recommendation-footer"><div class="home-recommendation-image">'+photo+'</div><div class="home-recommendation-next">'+next+'</div></div></div>');
 }
 function agentPanel(result){
   const suggestions=Array.isArray(result.recipes)?result.recipes:[];
@@ -508,7 +701,7 @@ function agentPanel(result){
   const alerts=result.alerts?.length?'<div class="section-title"><h2>预警</h2><button data-tab-go="inventory">去处理</button></div>'+result.alerts.map(a=>'<div class="alert-row"><span class="alert-dot"></span><div><strong>'+esc(a.name)+'</strong><p>'+esc(a.message)+'</p></div></div>').join(''):'';
   const shoppingItems=first?recipeMissingItems(first):(result.shopping||[]);
   const shopping=shoppingItems.length?'<div class="section-title"><h2>建议补购</h2><button data-action="open-recommendation-shopping" '+(first?'data-recipe-id="'+esc(first.id)+'"':'')+'>填写采购数量</button></div>'+shoppingItems.map(i=>'<div class="alert-row"><span>＋</span><div><strong>'+esc(i.name)+'</strong><p>用于 '+esc(i.source||first?.title||'推荐菜谱')+'</p></div></div>').join(''):'';
-  return '<section class="card agent-result" id="agent-result"><p class="result-summary agent-advice"><strong>管家建议：</strong>'+esc(advice)+'</p><div class="section-title"><h2>为你推荐</h2><button data-tab-go="recipes">全部菜谱</button></div>'+recommendations+alerts+shopping+'</section>';
+  return '<section class="card agent-result" id="agent-result"><p class="result-summary agent-advice"><strong>管家建议：</strong>'+esc(advice)+'</p><div class="section-title"><h2>为你推荐</h2></div>'+recommendations+alerts+shopping+'</section>';
 }
 app.addEventListener('click', event => {
   const button=event.target.closest('.home-page [data-home-action]');
@@ -650,9 +843,13 @@ function profile(){
   <section class="profile-menu-card"><h2>设置</h2><button class="profile-menu-row" data-action="open-reminder-settings"><span class="menu-icon">⚙</span><span>提醒设置</span><b>›</b></button><button class="profile-menu-row" data-action="edit-preferences"><span class="menu-icon">▤</span><span>偏好记忆</span><b>›</b></button><button class="profile-menu-row" data-action="open-privacy-data"><span class="menu-icon">⚙</span><span>隐私与数据管理</span><b>›</b></button></section>`;
 }
 function render(){if(!state)return;if(inventoryEntryView!=='photo')stopCamera();headerContent();app.innerHTML=currentTab==='home'?home():currentTab==='inventory'?inventory():currentTab==='recipes'?recipes():currentTab==='shopping'?shopping():profile();document.querySelectorAll('.nav-item').forEach(btn=>btn.classList.toggle('active',btn.dataset.tab===currentTab));}
-function findRecipe(id){return (state.recipes||[]).find(r=>r.id===id)||agentResult?.recipes?.find(r=>r.id===id);}
+function findRecipe(id){return (state.recipes||[]).find(r=>r.id===id)||agentResult?.recipes?.find(r=>r.id===id)||(typeof recipeLibrary==='undefined'?[]:recipeLibrary).find(r=>r.id===id);}
 function modal(content){modalLayer.hidden=false;modalLayer.innerHTML=`<div class="modal">${content}</div>`;}
 function closeModal(){modalLayer.hidden=true;modalLayer.innerHTML='';}
+function cityLocationModal(autoPrompt=false){
+  const reason=autoPrompt&&homeContext.locationError?`${homeContext.locationError}，请先选择城市。`:'仅支持中国城市，修改后会同步更新天气、地域推荐和节气提示。';
+  modal(`<div class="city-location-modal"><button type="button" class="modal-close" aria-label="关闭" data-action="close-modal">×</button><h2>${autoPrompt?'选择所在城市':'修改所在城市'}</h2><p class="meta">${esc(reason)}</p><form id="city-location-form"><label>城市</label><input name="city" list="china-city-list" required autocomplete="off" placeholder="搜索中国城市" value="${esc(homeContext.city||'')}"><datalist id="china-city-list">${chinaCities.map(city=>`<option value="${city}"></option>`).join('')}</datalist><div class="modal-actions"><button type="button" class="secondary-button" data-action="use-current-location">重新定位</button><button class="primary-button" type="submit">确认城市</button></div></form></div>`);
+}
 function inventoryEntryChoiceModal(){modal(`<h2>选择录入方式</h2><div class="entry-method-grid"><button data-action="open-ai-entry"><span>✦</span><div><strong>AI录入</strong><small>用一句话批量识别食材信息</small></div></button><button data-action="open-photo-entry"><span>⌑</span><div><strong>拍照录入</strong><small>拍摄或选择食材照片</small></div></button><button data-action="open-manual-entry"><span>▤</span><div><strong>手动录入</strong><small>从知识库分类选择食材</small></div></button></div><div class="modal-actions"><button type="button" class="secondary-button" data-action="close-modal">取消</button></div>`);}
 function manualEntryUnitOptions(food,selected){return [...new Set(['克','斤',...Object.keys(food?.units||{}),selected,...commonUnits])].map(unit=>`<option ${unit===selected?'selected':''}>${unit}</option>`).join('');}
 function manualEntryEstimatedWeight(name,quantity,unit){const grams=unit==='克'?1:findFoodKnowledge(name)?.units?.[unit];return grams?`预计约 ${Math.round(Number(quantity||0)*grams)}g`:'暂无可用的克数估算';}
@@ -745,12 +942,15 @@ async function ask(question,quickMode=''){
       }catch(error){/* Keep the first response when the optional retry fails. */}
     }
     if(mode==='dinner')result.recipes=(result.recipes||[]).filter(recipe=>Number(recipe.duration)>0&&Number(recipe.duration)<=30&&Number(recipe.servings)===2);
-    if(mode==='expiry')result.recipes=(result.recipes||[]).filter(recipe=>recipeExpiryPriority(recipe).count>0);
+    if(mode==='expiry'){
+      const expiryMatches=(result.recipes||[]).filter(recipe=>recipeExpiryPriority(recipe).count>0);
+      result.recipes=expiryMatches.length?expiryMatches:[];
+    }
     if(['expiry','dinner'].includes(mode)&&(!result.recipes?.length||(previousTitles.length&&result.recipes.every(recipe=>previousTitles.includes(recipe.title))))){
       const fallback=fallbackAgentResult(mode,previousTitles);
       if(fallback.recipes.length||!result.recipes?.length)result=fallback;
     }
-    result.recipes=sortAgentRecipes(result.recipes||[]);
+    result.recipes=sortAgentRecipes(result.recipes||[]).map((recipe,index)=>({...recipe,tags:uniqueTags([...(index<2&&festivalBanquetScore(recipe)?['节日家宴']:[]),...(regionalRecipeScore(recipe)?[`${homeContext.region}风味`]:[]),...(recipe.tags||[])])}));
     agentResult=result;
     agentQuickMode=mode;
     state.recipes=[...(result.recipes||[]),...(state.recipes||[]).filter(old=>!(result.recipes||[]).some(next=>next.id===old.id))];
@@ -770,8 +970,25 @@ function captureCamera(){const video=document.getElementById('camera-preview');i
 async function importShopping(items){if(!items?.length){toast('当前没有需要补购的食材');return;}items.forEach(item=>state.shopping.push({id:`shop-${Date.now()}-${Math.random().toString(16).slice(2)}`,name:item.name,quantity:item.quantity,unit:item.unit,category:item.category||'其他',source:`菜谱导入 · ${item.source||selectedRecipe?.title||'智能推荐'}`,status:'pending',completedAt:''}));await persist();toast('已加入采购清单');}
 
 document.addEventListener('click',async event=>{const target=event.target.closest('[data-action],[data-tab],[data-tab-go]');if(!target)return;if(target.dataset.tab){currentTab=target.dataset.tab;selectedRecipe=null;returnTab=null;inventoryEntryView=null;photoPreviewUrl='';if(currentTab!=='inventory'){inventoryManageMode=false;selectedInventoryIds.clear();}render();return;}if(target.dataset.tabGo){currentTab=target.dataset.tabGo;selectedRecipe=null;returnTab=target.dataset.returnTab||null;inventoryEntryView=null;photoPreviewUrl='';if(currentTab!=='inventory'){inventoryManageMode=false;selectedInventoryIds.clear();}render();return;}const action=target.dataset.action;
+  if(action==='open-city-location'){cityLocationModal();return;}
+  if(action==='use-current-location'){closeModal();localStorage.removeItem('home-context-cache');localStorage.removeItem('home-location-prompted');loadHomeContext(true);return;}
   if(action==='open-guide-reference'){homepage.openGuideReference();return;}
-  if(action==='open-daily-review'){homepage.openDailyReview();return;}
+  if(action==='open-dinner-wheel'){dinnerWheelModal();return;}
+  if(action==='back-to-dinner-wheel'){dinnerWheelModal();return;}
+  if(action==='spin-dinner-wheel'){
+    const wheel=target.closest('.dinner-wheel');
+    if(wheel?.classList.contains('spinning'))return;
+    let available=dinnerWheelRecipes.filter(recipe=>!dinnerWheelUsed.has(recipe.id));
+    if(!available.length){dinnerWheelModal(true);return;}
+    const recipe=available[Math.floor(Math.random()*available.length)];
+    const index=Math.max(0,dinnerWheelRecipes.findIndex(item=>item.id===recipe.id));
+    dinnerWheelUsed.add(recipe.id);dinnerWheelLastRecipeId=recipe.id;
+    wheel?.style.setProperty('--spin',`${1080+(8-index)*45-22.5}deg`);
+    wheel?.classList.add('spinning');target.disabled=true;
+    const result=document.getElementById('dinner-wheel-result');if(result)result.textContent='转盘正在选择…';
+    setTimeout(()=>{if(result)result.textContent=`今天试试：${recipe.title}`;recommendationPreview(recipe,'转盘推荐',{returnToWheel:true});},900);
+    return;
+  }
   if(action==='open-ai-entry'){aiEntryDestination=inventoryEntryView==='manual'?'cart':'inventory';aiInventoryModal();return;}
   if(action==='open-manual-entry'){closeModal();inventoryEntryView='manual';manualEntryCategory='蔬菜';manualEntrySearch='';manualCartExpanded=false;render();return;}
   if(action==='complete-manual-entry'){if(!manualEntryCart.length)return;const count=manualEntryCart.length;manualEntryCart.forEach(item=>state.inventory.push({id:`inv-${Date.now()}-${Math.random().toString(16).slice(2)}`,name:item.name,quantity:Number(item.quantity),unit:item.unit,estimatedGrams:Number(item.estimatedGrams)||null,location:item.location,purchaseDate:item.purchaseDate||today,createdAt:item.createdAt||today,freshness:item.freshness||'新鲜',aiFreshness:item.freshness||null}));await persist();manualEntryCart=[];manualCartExpanded=false;inventoryEntryView=null;inventoryCategory='全部';render();toast(`已录入 ${count} 种食材`);return;}
@@ -789,6 +1006,13 @@ document.addEventListener('keydown',event=>{const input=event.target.closest('in
 function updateManualConfirm(form,nameChanged=false){const name=form.elements.name.value.trim(),food=findFoodKnowledge(name);if(nameChanged&&food&&form.dataset.matchedName!==food.canonical_name){const unit=Object.keys(food.units||{})[0]||'个';form.elements.unit.innerHTML=manualEntryUnitOptions(food,unit);form.elements.location.value=food.default_storage==='frozen'?'冷冻':'冷藏';form.dataset.matchedName=food.canonical_name;}form.querySelector('.manual-estimated-weight').textContent=manualEntryEstimatedWeight(name,form.elements.quantity.value,form.elements.unit.value);}
 document.addEventListener('submit',async event=>{
   const form=event.target;
+  if(form.id==='city-location-form'){
+    event.preventDefault();event.stopImmediatePropagation();
+    const button=form.querySelector('[type="submit"]');button.disabled=true;button.textContent='正在更新…';
+    try{const weatherUpdated=await chooseChinaCity(new FormData(form).get('city'));closeModal();toast(weatherUpdated?'城市和天气已更新':'城市已保存，天气稍后更新');}
+    catch(error){toast(error.message);button.disabled=false;button.textContent='确认城市';}
+    return;
+  }
   if(form.id==='ai-inventory-request-form'){
     event.preventDefault();event.stopImmediatePropagation();
     const button=form.querySelector('[type="submit"]');button.disabled=true;button.textContent='AI识别中…';

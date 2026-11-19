@@ -1,5 +1,14 @@
 :root{--ink:#25322e;--sub:#75807a;--paper:#fffaf5;--card:#fff;--line:#eee5de;--brand:#de6c4d;--brand-soft:#fff0e9;--green:#3c946b;--green-soft:#e9f6ee;--yellow:#c17a17;--yellow-soft:#fff5df;--danger:#d65a4a;--danger-soft:#fff0ee;--shadow:0 12px 36px rgba(69,45,30,.09)}
 .header-back-action{border:0;background:var(--brand-soft);color:var(--brand);border-radius:10px;padding:8px 10px;font-size:12px;font-weight:600;white-space:nowrap}
+.home-header{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.home-brand{min-width:0;flex:1;padding-top:2px}
+.home-brand .eyebrow{white-space:nowrap;font-size:10px}
+.app-header .home-brand h1{margin:0;color:var(--ink);font-size:23px;font-weight:700;letter-spacing:.03em;line-height:1.25}
+.home-weather{min-width:0;width:max-content;max-width:185px;margin-left:auto;display:grid;gap:2px;justify-items:end;border:0;border-radius:13px;padding:7px 8px;background:linear-gradient(135deg,#eef7f1,#fff8ef);color:var(--ink);text-align:right;box-shadow:inset 0 0 0 1px rgba(92,130,105,.1)}
+.home-weather strong{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--ink)}
+.home-weather small{font-size:9px;color:var(--sub);font-weight:600;white-space:nowrap}
+.home-weather span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px;color:var(--green);font-weight:700}
+.city-location-modal>.meta{margin:-7px 0 12px;line-height:1.55}
 .modal-close{position:absolute;top:14px;right:14px;width:32px;height:32px;border:0;border-radius:50%;background:#f3eee9;color:var(--sub);font-size:23px;line-height:1}.modal:has(.modal-close){position:relative}.avatar-editor{display:flex;align-items:center;gap:12px;padding:2px 0 13px}.avatar-editor-preview{width:58px;height:58px;flex:none;border-radius:18px;overflow:hidden;background:linear-gradient(135deg,#f0b896,#df714f);display:grid;place-items:center;font-size:28px}.avatar-editor-preview img{width:100%;height:100%;object-fit:cover}.avatar-editor strong{font-size:14px}.avatar-editor p{font-size:11px;color:var(--sub);margin:3px 0 8px}.avatar-upload{display:inline-block!important;margin:0!important;border:1px solid var(--brand);color:var(--brand)!important;background:#fff;border-radius:9px;padding:6px 9px;font-size:11px!important}.modal .avatar-file-input{display:none}
 .preference-tags.danger em{background:var(--danger-soft);color:var(--danger)}.form-hint{font-size:11px;line-height:1.5;color:var(--danger);margin:8px 0 0}
 .profile-menu-card{background:#fff;border:1px solid var(--line);border-radius:18px;padding:10px 15px 2px;margin:18px 0;box-shadow:0 3px 12px rgba(70,47,31,.035)}.profile-menu-card h2{font-size:17px;margin:3px 0 8px}.profile-menu-row{width:100%;display:flex;align-items:center;gap:12px;border:0;border-bottom:1px solid var(--line);background:transparent;padding:13px 0;text-align:left;color:var(--ink);font-size:15px}.profile-menu-row:last-child{border-bottom:0}.profile-menu-row>span:nth-child(2){flex:1}.profile-menu-row b{font-size:25px;color:#c9c4bf;font-weight:400}.menu-icon{width:33px;height:33px;display:grid;place-items:center;border-radius:10px;background:#f2f6f5;color:#70808a;font-size:16px}.menu-icon.warm{background:var(--yellow-soft);color:#d39b39}.modal-history{margin:-4px 0 0}.review-summary{display:flex;align-items:baseline;gap:7px;background:var(--green-soft);color:var(--green);padding:14px;border-radius:13px;margin-bottom:13px}.review-summary b{font-size:25px}.review-summary span{font-size:12px}.reminder-modal-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0 16px}.reminder-modal-row strong{font-size:14px}.reminder-modal-row p,.privacy-copy{font-size:12px;line-height:1.6;color:var(--sub);margin:4px 0 0}
@@ -50,9 +59,6 @@
 .home-page .health-card{background:linear-gradient(135deg,#f1f8f1,#fff);}
 .home-page .health-heading{display:flex;align-items:center;justify-content:space-between}
 .home-page .health-heading h2{font-size:16px;margin:4px 0}
-.home-page .health-score{font-size:26px;color:var(--green)}
-.home-page .health-score small{font-size:11px;color:var(--sub);font-weight:400}
-.home-page .health-track{height:7px;border-radius:9px;background:#e7eee7;margin:10px 0}
 
 /* 食材录入：克制的悬浮待录入提示 */
 .manual-cart{bottom:80px;width:min(calc(100% - 24px),406px);overflow:visible;border:1px solid rgba(122,88,68,.12);border-radius:20px;background:rgba(255,252,249,.9);box-shadow:0 14px 40px rgba(75,48,31,.14);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
@@ -74,7 +80,6 @@
 .manual-cart-fly-count{position:fixed;z-index:100;width:24px;height:24px;display:grid;place-items:center;border:2px solid #fff;border-radius:50%;background:#ff3b21;color:#fff;box-shadow:0 5px 14px rgba(255,59,33,.32);font-size:13px;font-weight:800;line-height:1;pointer-events:none}
 .manual-cart.just-added .manual-cart-icon{animation:manual-cart-arrival-bounce .78s cubic-bezier(.2,.85,.3,1.2)}
 @keyframes manual-cart-arrival-bounce{0%,100%{transform:translateY(0) scale(1) rotate(0)}35%{transform:translateY(-6px) scale(1.3) rotate(-8deg)}68%{transform:translateY(1px) scale(.96) rotate(4deg)}}
-.home-page .health-track span{display:block;height:100%;border-radius:inherit;background:var(--green)}
 .home-page .health-card p{font-size:12px;line-height:1.55;color:var(--sub);margin:0}
 .home-page .daily-empty{padding:22px 16px}
 .home-page .daily-empty .secondary-button{padding:10px 14px;margin-top:12px}
@@ -105,26 +110,27 @@
 .home-page .diet-tip-card .tip-shopping-button{display:block;margin:10px auto 0}
 .home-page .nutrition-details summary{cursor:pointer}
 .home-page .tip-shopping-button:disabled{opacity:.6}
-.home-page .nutrition-breakdown{display:grid;gap:9px;margin:10px 0!important}
-
-/* 首页库存构成：库存类别环图与今日已记录消耗 */
-.home-page .nutrition-breakdown{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;margin:14px 0 0!important;color:var(--ink);font-size:11px!important}
-.home-page .nutrition-share,.home-page .nutrition-intake{min-width:0}
-.home-page .nutrition-share-title>strong,.home-page .nutrition-intake>strong{display:block;font-size:12px;margin-bottom:8px}
-.home-page .nutrition-donut{width:min(100%,128px);aspect-ratio:1;border-radius:50%;margin:2px auto 12px;display:grid;place-items:center}
+.home-page .nutrition-breakdown{display:block;margin:14px 0 0!important;color:var(--ink);font-size:11px!important}
+.home-page .nutrition-donut{width:148px;max-width:100%;aspect-ratio:1;border-radius:50%;margin:2px auto 14px;display:grid;place-items:center;box-shadow:0 8px 22px rgba(63,94,68,.1)}
 .home-page .nutrition-donut>span{width:57%;aspect-ratio:1;border-radius:50%;background:#fff;display:grid;place-items:center;text-align:center;font-size:11px;font-weight:700;line-height:1.35}
-.home-page .nutrition-legend{display:grid;gap:6px}
-.home-page .nutrition-legend-item,.home-page .nutrition-progress-item>div{display:flex;align-items:center;gap:5px;min-width:0}
-.home-page .nutrition-legend-item i,.home-page .nutrition-progress-item i{width:7px;height:7px;border-radius:50%;flex:none}
-.home-page .nutrition-legend-item span,.home-page .nutrition-progress-item span{min-width:0;flex:1}
-.home-page .nutrition-legend-item b,.home-page .nutrition-progress-item b{font-size:10px;white-space:nowrap;font-weight:600}
-.home-page .nutrition-intake>p{font-size:10px;margin:-4px 0 12px;color:var(--sub)}
-.home-page .nutrition-progress-item{margin-bottom:13px}
-.home-page .nutrition-progress-item>div{margin-bottom:5px}
-.home-page .nutrition-progress-track{display:block;height:7px;border-radius:99px;background:#eee9e4;overflow:hidden}
-.home-page .nutrition-progress-track>span{display:block;height:100%;border-radius:inherit}
-.home-page .nutrition-chart-note{font-size:10px!important;margin-top:10px!important;line-height:1.5}
-@media(max-width:360px){.home-page .nutrition-breakdown{gap:9px}.home-page .nutrition-legend-item b,.home-page .nutrition-progress-item b{font-size:9px}}
+.home-page .nutrition-reference-button{border:0;border-radius:99px;background:var(--green-soft);color:var(--green);padding:7px 9px;font-size:10px;font-weight:700;white-space:nowrap}
+.home-page .nutrition-energy-row{display:grid;grid-template-columns:1fr auto;align-items:center;gap:3px 10px;margin-top:12px;padding:10px 11px;border-radius:12px;background:#fff8ed;border:1px solid #f3e7d5}
+.home-page .nutrition-energy-row span,.home-page .nutrition-energy-row strong{font-size:11px}.home-page .nutrition-energy-row strong{color:var(--yellow)}
+.home-page .nutrition-energy-row small{grid-column:1/-1;color:var(--sub);font-size:10px;line-height:1.5}
+.home-page .nutrition-metric-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.home-page .nutrition-metric{display:flex;align-items:center;gap:7px;min-width:0;padding:9px 10px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.84)}
+.home-page .nutrition-metric>i{width:8px;height:8px;border-radius:50%;flex:none}
+.home-page .nutrition-metric>span{min-width:0;flex:1}
+.home-page .nutrition-metric strong,.home-page .nutrition-metric small{display:block}
+.home-page .nutrition-metric strong{font-size:11px;color:var(--ink)}
+.home-page .nutrition-metric small{margin-top:2px;color:var(--sub);font-size:9px;line-height:1.4}
+.home-page .nutrition-metric>b{font-size:10px;white-space:nowrap}
+.home-page .nutrition-metric.met>b{color:#3d8a62}
+.home-page .nutrition-metric.unmet>b{color:#ce5d53}
+.home-page .nutrition-metric.neutral>b{color:var(--sub)}
+.home-page .nutrition-chart-note,.home-page .nutrition-source,.home-page .nutrition-disclaimer{font-size:10px!important;line-height:1.5;color:var(--sub)!important;margin:8px 0 0!important}
+.weekly-reference-list{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}.weekly-reference-row{display:flex;align-items:center;gap:8px;padding:10px;border:1px solid var(--line);border-radius:12px;background:#fff}.weekly-reference-row>i{width:9px;height:9px;border-radius:50%;flex:none}.weekly-reference-row strong,.weekly-reference-row small{display:block}.weekly-reference-row strong{font-size:12px}.weekly-reference-row small{font-size:10px;color:var(--sub);margin-top:2px}.guide-reference-intro,.guide-reference-source{font-size:11px;line-height:1.6;color:var(--sub)}.guide-reference-source{padding-top:10px;border-top:1px solid var(--line)}.guide-reference-source p{margin:4px 0 6px}.guide-reference-source a{color:var(--brand)}
+@media(max-width:360px){.home-page .nutrition-metric-list{grid-template-columns:1fr}}
 
 /* Homepage recommendation preview. */
 .modal:has(.home-recommendation-modal){position:relative}
@@ -151,7 +157,18 @@
 
 /* Homepage recommendation purchase review */
 .home-page .agent-result .recipe-scroll{display:flex;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x proximity;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
-.home-page .agent-result .recipe-card{flex:0 0 min(68%,250px);width:min(68%,250px);scroll-snap-align:start}
+.home-page .recipe-scroll{display:flex;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x proximity;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
+.home-page .recipe-card,.home-page .agent-result .recipe-card{flex:0 0 178px;width:178px;scroll-snap-align:start}
+.home-page .daily-recommendation-scroll{margin-bottom:2px}
+.dinner-wheel-entry{display:block;margin:0 auto 4px;border:0;background:transparent;color:var(--brand);font-size:13px;font-weight:650;padding:8px 12px;cursor:pointer}
+.dinner-wheel-modal{text-align:center}
+.dinner-wheel-copy{font-size:12px;line-height:1.55;color:var(--sub);margin:-7px 0 16px}
+.dinner-wheel{--spin:0deg;width:230px;height:230px;margin:8px auto 14px;border-radius:50%;position:relative;background:conic-gradient(#f6b69d 0 12.5%,#f4d28d 12.5% 25%,#a8cfb4 25% 37.5%,#a9c3e5 37.5% 50%,#efb2c4 50% 62.5%,#cdb7e9 62.5% 75%,#9fd5cd 75% 87.5%,#f1c19d 87.5% 100%);border:8px solid #fff;box-shadow:0 0 0 1px var(--line),0 12px 28px rgba(70,47,31,.12);transition:transform .85s cubic-bezier(.2,.75,.25,1)}
+.dinner-wheel.spinning{transform:rotate(var(--spin))}
+.dinner-wheel>button{position:absolute;inset:50% auto auto 50%;transform:translate(-50%,-50%);width:70px;height:70px;border-radius:50%;border:6px solid rgba(255,255,255,.8);background:var(--brand);color:white;font-weight:700;box-shadow:0 3px 10px rgba(70,47,31,.2);z-index:2}
+.wheel-option{position:absolute;left:50%;top:50%;width:62px;height:28px;margin:-14px 0 0 -31px;display:-webkit-box;align-content:center;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2;text-align:center;overflow-wrap:anywhere;word-break:break-all;font-size:8px;line-height:1.18;font-weight:700;color:#59483f;transform:rotate(calc(var(--i)*45deg + 22.5deg)) translateY(-76px) rotate(calc(var(--i)*-45deg - 22.5deg));transform-origin:center}.wheel-option.used{opacity:.42}
+.wheel-pointer{position:absolute;top:-17px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:10px solid transparent;border-right:10px solid transparent;border-top:22px solid var(--brand);z-index:3}
+.dinner-wheel-result{min-height:20px;font-size:12px;color:var(--sub);margin:0}
 .home-recommendation-next{display:flex;flex-direction:column;gap:8px}
 .home-recommendation-next .secondary-button{width:100%}
 .recommendation-shopping-modal>.meta{margin:-8px 0 12px}
@@ -161,31 +178,6 @@
 .recommendation-shopping-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .recommendation-shopping-item>.meta{font-size:11px;margin:7px 0 0}
 .recommendation-shopping-modal .modal-actions{position:sticky;bottom:-19px;background:#fffaf5;padding:12px 0 19px;margin-top:8px}
-
-
-/* 首页：今日饮食复盘 */
-.home-page .daily-review-title{margin-top:18px}
-.home-page .daily-review-card{padding:16px;background:linear-gradient(145deg,#fff 0%,#fffaf4 100%)}
-.home-page .daily-review-heading{display:flex;align-items:flex-start;gap:11px}
-.home-page .daily-review-icon{width:34px;height:34px;display:grid;place-items:center;flex:none;border-radius:11px;background:var(--yellow-soft);color:#c8892d;font-size:18px;font-weight:700}
-.home-page .daily-review-heading p{margin:1px 0 0;color:var(--ink);font-size:14px;line-height:1.7}
-.home-page .daily-review-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:13px 0 4px}
-.home-page .daily-review-stats span{padding:9px 5px;border-radius:11px;background:#f7f3ee;color:var(--sub);font-size:10px;text-align:center;white-space:nowrap}
-.home-page .daily-review-stats b{display:block;margin-bottom:2px;color:var(--ink);font-size:17px}
-.home-page .daily-review-action{width:100%;display:flex;align-items:center;justify-content:center;gap:6px;margin-top:12px;padding:11px;border:0;border-radius:12px;background:#fff0e8;color:var(--brand);font-weight:700}
-.home-page .daily-review-action b{font-size:18px;line-height:1}
-.home-page .daily-review-note{display:block;margin:9px 0 0;text-align:center;font-size:10px}
-.daily-review-modal-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:4px 0 14px}
-.daily-review-modal-summary>div{padding:12px 5px;border-radius:12px;background:#f7f3ee;text-align:center}
-.daily-review-modal-summary b{display:block;color:var(--ink);font-size:22px}
-.daily-review-modal-summary span{color:var(--sub);font-size:10px}
-.daily-review-modal-copy{margin:0 0 15px;padding:13px 14px;border-radius:13px;background:#fff8f1;color:var(--ink);font-size:13px;line-height:1.7}
-.daily-review-detail{display:grid;margin-bottom:14px;border:1px solid var(--line);border-radius:13px;overflow:hidden}
-.daily-review-detail-row{display:flex;align-items:center;gap:8px;padding:11px 12px;border-bottom:1px solid var(--line);background:#fff}
-.daily-review-detail-row:last-child{border-bottom:0}
-.daily-review-detail-row i{width:8px;height:8px;border-radius:50%;flex:none}
-.daily-review-detail-row span{flex:1;color:var(--ink);font-size:12px}
-.daily-review-detail-row b{color:var(--sub);font-size:11px;font-weight:600}
 
 
 /* 库存结构与膳食指南参考对比 */
