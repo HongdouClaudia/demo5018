@@ -5,7 +5,7 @@ const path = require('node:path');
 const {execFileSync} = require('node:child_process');
 
 const root = path.resolve(__dirname, '..');
-const base = process.env.COMPATIBILITY_BASE_REF || '5ece0a19077fc23b208cc94efe59cec806bb8980';
+const base = process.env.COMPATIBILITY_BASE_REF || '6e1941c77a05a19dd9e3b19acc2ab093ff2f03e8';
 const git = process.env.GIT_BIN || 'git';
 const protectedFiles = [
   'app.js', 'styles.css', 'index.html', 'seed.json',

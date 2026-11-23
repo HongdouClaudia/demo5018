@@ -36,12 +36,6 @@ window.recipeFrameReady = () => {
     try {
       if (message.type === 'flush') {
         stopSpeechRecognition(true);
-        if (recommendationController) {
-          recommendationController.abort();
-          recommendationController = null;
-          recommendationGeneration++;
-          recommendationLoading = false;
-        }
         await refreshing;
         await menuEditQueue;
         await persistenceQueue;

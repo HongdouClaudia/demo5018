@@ -359,7 +359,7 @@ button{touch-action:manipulation;cursor:pointer;max-width:100%}
 
 .recipe-page .meal-mode-controls {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
   margin: 10px 0 14px;
 }
@@ -387,14 +387,6 @@ button{touch-action:manipulation;cursor:pointer;max-width:100%}
   border: 1px solid currentColor;
   font-weight: 650;
 }
-.dish-position { color: var(--sub); font-weight: 600; }
-.dish-cook-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 16px 0;
-}
-.dish-cook-actions button { flex: 1 1 128px; min-height: 46px; }
 #menu-shopping-form .missing-choice {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -405,7 +397,7 @@ button{touch-action:manipulation;cursor:pointer;max-width:100%}
 
 .recipe-page .recipe-tabs {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 5px;
   border: 0;
 }
@@ -521,3 +513,49 @@ button{touch-action:manipulation;cursor:pointer;max-width:100%}
 @media(max-width:350px) {
   .meal-use-actions { bottom: -16px; margin: 0 -16px -16px; padding-inline: 16px; }
 }
+
+.recipe-purchase-note { margin: 8px 0; color: #823720; font-size: 13px; overflow-wrap: anywhere; }
+.meal-cooking-actions, .meal-cooking-jumps { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.meal-cooking-jumps { flex-basis: 100%; margin: 0; }
+.meal-cooking-actions button { min-height: 44px; padding: 6px 12px; }
+.meal-cooking-track {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-inline: contain;
+}
+.meal-cooking-dish {
+  flex: 0 0 100%;
+  min-width: 0;
+  scroll-snap-align: start;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+.meal-cooking-dish > h3 { margin: 0 0 8px; }
+.meal-cooking-dish .dish-photo { max-height: 260px; }
+.meal-cooking-ingredients { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; }
+.meal-cooking-ingredients div { display: flex; gap: 6px; }
+.meal-cooking-ingredients dd { margin: 0; color: var(--sub); }
+.meal-cooking-dish .flow-step:last-child { padding-bottom: 0; }
+.meal-cooking-dish .meal-cooking-finish { display: block; width: 100%; min-height: 46px; margin: 0; }
+
+.recipe-page .recipe-source-tag {
+  display: inline-flex;
+  align-self: flex-start;
+  justify-self: start;
+  border-radius: 6px;
+  padding: 3px 8px;
+  margin: 2px 0;
+  font-size: 12px;
+  font-weight: 650;
+}
+.recipe-page .source-xiaohongshu { background: #ffe8ed; color: #982648; }
+.recipe-page .source-douyin { background: #e6eef8; color: #294a6e; }
+.recipe-page .source-saved { background: #e3f1e8; color: #245e40; }
+
+.recipe-page .recipe-card-tag.tag-cuisine{background:#faeddf;color:#824d20}
+.recipe-page .recipe-card-tag.tag-seasonal{background:#e6f2df;color:#346322}

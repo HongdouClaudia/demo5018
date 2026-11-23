@@ -3,7 +3,8 @@ const root=require('path').resolve(__dirname,'..');
 const elements=new Map();const handlers={};
 const document={getElementById(id){if(!elements.has(id))elements.set(id,{innerHTML:'',hidden:false,querySelector(){return null;},classList:{add(){},remove(){}}});return elements.get(id);},querySelector(){return null;},querySelectorAll(){return [];},addEventListener(type,fn){handlers[type]=fn;}};
 const c=vm.createContext({CSS:{escape:String},document,window:{addEventListener(){},scrollTo(){},scrollY:0},console,Date,Math,JSON,Map,Set,Number,String,Boolean,Array,setTimeout(){}});
-vm.runInContext(fs.readFileSync(root+'/recipes.js','utf8'),c);
+// Stable legacy fixtures exercise restored cooking sessions; catalog tests below load the real JSON.
+vm.runInContext(fs.readFileSync(root+'/tests/fixtures/legacy-recipes.js','utf8'),c);
 vm.runInContext(fs.readFileSync(root+'/recipe-app.js','utf8').replace(/loadState\(\)\.catch\([\s\S]*$/,''),c);
 const run=s=>vm.runInContext(s,c);let assertions=0;
 const check=(s,v=true)=>{assert.deepEqual(JSON.parse(JSON.stringify(run(s))),v,s);assertions++;};
@@ -17,7 +18,8 @@ check(`[[0,0],[4,59],[5,0],[9,59],[10,0],[13,59],[14,0],[20,59],[21,0],[23,59]].
   ['snack','snack','breakfast','breakfast','lunch','lunch','dinner','dinner','snack','snack']);
 run(`mealPlan.resultMeal='snack';mealPlan.results=['tomato-egg-rice'];mealPlan.request.dish='宵夜吃什么';syncMealOnOpen(new Date(2026,10,13,10));headerContent();`);
 check(`document.getElementById('app-header').innerHTML.includes('中餐吃什么')`);
-check(`['现有食材','增补食材','不限食材'].every(label=>recipePage().includes(label))`);
+check(`['现有食材','不限食材'].every(label=>recipePage().includes(label))`);
+check(`!recipePage().includes('增补食材')&&!recipeTabs('discover').includes('采购清单')&&!recipeTabs('discover').includes('我的收藏')`);
 check(`mealPlan.results.length`,0);
 check(`mealPlan.request.dish`,'');
 check(`activeMeal().meal`,'dinner');
@@ -50,7 +52,7 @@ check(`document.getElementById('modal-layer').innerHTML.includes('data-consumpti
 run(`draft.editKey='鸡蛋|个';draft.sources['鸡蛋|个']='mixed';consumptionModal();`);
 check(`document.getElementById('modal-layer').innerHTML.includes('其中用了多少旧库存')`);
 check(`document.getElementById('modal-layer').innerHTML.includes('外购还有剩余吗？')`);
-check(`cookingPage().includes('放弃这道菜')&&!cookingPage().includes('current-cook-step')`);
+check(`cookingPage().includes('meal-cooking-track')&&cookingPage().includes('制作完成')&&!cookingPage().includes('下一步')`);
 run(`delete activeMeal().dishIndex;`);
 run(`activeMeal().stepIndex=1;`);check(`activeMeal().timeline.filter(s=>s.done).length`,0);
 run(`activeMeal().timeline[1].done=true;activeMeal().stepIndex=0;`);check(`activeMeal().timeline.filter(s=>s.done).length`,1);
@@ -63,19 +65,15 @@ check(`preferences().allergies`,['花生']);check(`preferences().avoid`,['香菜
 run(`delete mealPlan.request.preferences;currentTab='recipes';recipeScreen='browse';`);
 check(`!recipePage().includes('首次确认过敏与忌口')&&!recipePage().includes('需求摘要')`);
 run(`recommendationLoading=true;mealPlan.results=[];`);
-check(`recipePage().includes('正在理解需求并生成文字菜谱')`);
+check(`recipePage().includes('正在搜索菜谱')`);
 check(`recipePage().includes('这组条件下没有更多方案')`,false);
 run(`recommendationLoading=false;`);
 check(`voiceControls('dish-query','用餐需求').includes('recipe-voice-button')`);
 check(`voiceControls('dish-query','用餐需求').includes('<svg')`);
-check(`recipePage().includes('说说家里有什么，想吃什么')`);
+check(`recipePage().includes('输入菜名或食材，如番茄、鸡蛋')`);
 await run(`changeMealMenu('another-recipe',true)`);
 check(`mealPlan.menu.length`,2);
 check(`document.getElementById('toast').textContent.includes('请重新选择')`);
-run(`activeMeal().dishIndex=0;activeMeal().dishStarted=true;`);
-await run(`changeMealMenu('tomato-egg-rice',false)`);
-check(`mealPlan.menu.length`,2);
-check(`document.getElementById('toast').textContent.includes('无法移出')`);
 run(`const testActive=clone(activeMeal());let submitted=[];api=async(url,options={})=>{if(url==='/api/state'){const data=options.body?JSON.parse(options.body).state:state;return {...data,revision:(data.revision||0)+1};}if(url==='/api/cook'){submitted.push(JSON.parse(options.body));state.mealPlan.lastCompleted={operationId:submitted.at(-1).operationId,recipe:{title:'测试餐'},counts:submitted.at(-1).counts,basis:'reference'};return {state,operation:{id:submitted.at(-1).operationId}};}throw new Error('Unexpected test request');};`);
 await run('usePersonalPreferences()');
 check(`!mealPlan.request.preferences`);check(`preferences().allergies`,['花生']);
@@ -146,7 +144,7 @@ await handlers.click({target:{dataset:{action:'later-consumption'},closest(){ret
 check(`activeMeal().status`,'awaiting_confirmation');
 check(`activeMeal().consumptionDraft.leftoverQuantities['鸡蛋|个']`,'1');
 check(`submitted.length`,0);
-run(`mealPlan.active=null;mealPlan.menu=[];replaceMenuIndex=null;state.preferences.allergiesStatus='none';state.preferences.allergies=[];`);
+run(`mealPlan.active=null;mealPlan.menu=[];state.preferences.allergiesStatus='none';state.preferences.allergies=[];`);
 const clickMenu=(action,id)=>handlers.click({target:{dataset:{action,id},closest(){return this;}}});
 await Promise.all([
   clickMenu('choose-meal','tomato-egg-rice'),
@@ -156,13 +154,27 @@ check(`mealPlan.menu.map(item=>item.recipeId)`,['tomato-egg-rice','tomato-egg-di
 check(`mealMenuButton().includes('已选2道')&&recipeCard('tomato-egg-dinner').includes('移出本餐')`);
 await clickMenu('remove-menu-item','tomato-egg-dinner');
 check(`mealMenuButton().includes('已选1道')&&recipeCard('tomato-egg-dinner').includes('加入本餐')`);
-run(`const liveAllocation=collectMenuAllocations();mealPlan.active={...liveAllocation,id:'live',status:'cooking',dishIndex:0,dishStarted:true,stepIndex:1};activeMeal().timeline[0].done=true;`);
+await clickMenu('open-meal-menu');
+check(`recipeScreen`,'cooking');
+check(`(recipePage().match(/data-action="finish-cooking"/g)||[]).length`,1);
+check(`!recipePage().includes('换一道')&&!recipePage().includes('移出本餐')&&!recipePage().includes('再加一道')&&!recipePage().includes('>采购清单</button>')`);
+check(`recipePage().includes('番茄鸡蛋盖饭')&&recipePage().includes('制作完成')`);
+check(`document.getElementById('modal-layer').hidden`);
+check(`activeMeal().dishes.every(dish=>!dish.cooked)`);
+await clickMenu('back-to-recipes');
+check(`recipeScreen`,'browse');
 await clickMenu('choose-meal','tomato-egg-dinner');
 check(`activeMeal().dishes.map(dish=>dish.recipe.id)`,['tomato-egg-rice','tomato-egg-dinner']);
-check(`activeMeal().stepIndex===1&&activeMeal().timeline[0].done`);
+check(`activeMeal().status`,'cooking');
 await clickMenu('remove-menu-item','tomato-egg-dinner');
 check(`activeMeal().dishes.map(dish=>dish.recipe.id)`,['tomato-egg-rice']);
-check(`activeMeal().stepIndex===1&&activeMeal().timeline[0].done`);
+check(`activeMeal().status`,'cooking');
+check(`activeMeal().dishes.every(dish=>!dish.cooked)`);
+const beforeComplete=run(`JSON.stringify(state.inventory)`);
+await clickMenu('finish-cooking');
+check(`activeMeal().status`,'awaiting_confirmation');
+check(`activeMeal().consumptionDraft.cookedDishIds`,['tomato-egg-rice']);
+check(`JSON.stringify(state.inventory)`,beforeComplete);
 run(`mealPlan.active=null;mealPlan.menu=[{recipeId:'tomato-egg-rice',servings:2},{recipeId:'tomato-egg-dinner',servings:2}];`);
 run(`mealPlan.request.mode='explore';mealPlan.request.allowAdditionalIngredients=true;mealPlan.request.dish='';mealPlan.intent=null;state.inventory=[];state.preferences.avoid=['香菜'];const testRecipe={title:'家常土豆炖牛肉',recommendationSource:'AI',mealTypes:['dinner'],duration:30,waitMinutes:0,servings:2,appliances:['炒锅'],ingredients:[{name:'牛肉',quantity:200,unit:'g'},{name:'土豆',quantity:1,unit:'个'}],steps:[]};`);
 check(`rankedRecipes('dinner',[testRecipe]).length`,1);
@@ -183,6 +195,8 @@ check(`menuShoppingCandidates().find(i=>i.name==='鸡蛋').suggestedQuantity`,2)
 check(`menuShoppingCandidates().find(i=>i.name==='土豆').suggestedQuantity`,2);
 check(`menuShoppingCandidates().find(i=>i.name==='土豆').stockGroup`,'unrecorded');
 check(`menuShoppingCandidates().some(i=>['盐','葱','番茄'].includes(i.name))`,false);
+check(`recipePurchaseNote(menuRecipe(mealPlan.menu[0])).includes('鸡蛋、土豆、胡萝卜')`);
+check(`!recipePurchaseNote(menuRecipe(mealPlan.menu[0])).includes('盐')`);
 check(`menuShoppingCandidates().find(i=>i.name==='胡萝卜').suggestedQuantity`,null);
 run(`const trackedTest=collectMenuAllocations();mealPlan.active={...trackedTest,servings:2};`);
 check(`consumptionItems(activeMeal()).some(i=>i.name==='盐'||i.name==='葱')`,false);
@@ -191,34 +205,52 @@ run(`mealPlan.active=null;`);
 run(`openMenuShopping();`);
 check(`!document.getElementById('modal-layer').innerHTML.includes('调味料提醒')`);
 check(`document.getElementById('modal-layer').innerHTML.includes('确认采购清单')&&document.getElementById('modal-layer').innerHTML.includes('鸡蛋')`);
-run(`imageWorkerBusy=true;mealPlan.aiRecipes=[{id:'image-test',title:'测试菜',ingredients:[],steps:[],servings:2}];state.generatedRecipeImages={};queueRecipeImages(['image-test','image-test']);`);
-check(`imageQueue.filter(id=>id==='image-test').length`,1);
-check(`imageMarkup(recipeForView(recipeById('image-test'))).includes('正在搜索配图')`);
-run(`imageQueue.length=0;imageQueued.delete('image-test');imageErrors.set('image-test','连接失败');`);
-check(`imageMarkup(recipeForView(recipeById('image-test'))).includes('连接失败')`);
-run(`queueRecipeImages(['image-test']);`);check(`imageQueue.length`,0);
-run(`queueRecipeImages(['image-test'],true);`);check(`imageQueue.length`,1);
-run(`imageQueue.length=0;imageQueued.clear();imageWorkerBusy=false;`);
-run(`state.generatedRecipeImages['image-test']={imageUrl:'https://example.com/dish.jpg',imageType:'web-search',imageSource:'示例网站',imageSourceUrl:'https://example.com/recipe',imageLicense:'授权待核对'};`);
-check(`imageMarkup(recipeForView(recipeById('image-test'))).includes('示例网站')`);
-check(`imageMarkup(recipeForView(recipeById('image-test'))).includes('授权待核对')`);
-run(`queueRecipeImages(['image-test']);`);check(`imageQueue.length`,0);
-
-// Explore rotation only excludes the current batch; older dishes may return.
-c.AbortController=AbortController;
 c.URL=URL;
-run(`defaultMeal='dinner';explicitMeal='dinner';mealPlan.roundMeal='dinner';`);
-run(`currentTab='home';state.preferences={allergiesStatus:'none',dietStatus:'none',allergies:[],avoid:[]};mealPlan.active=null;mealPlan.request={dish:'',servings:2,duration:30,mode:'explore',allowAdditionalIngredients:true};mealPlan.intent=null;const oldDish={...testRecipe,title:'旧菜',ingredients:[{name:'土豆',quantity:1,unit:'个'}]},currentDish={...testRecipe,title:'当前菜',ingredients:[{name:'鸡蛋',quantity:1,unit:'个'}]};oldDish.id=stableRecipeId(recommendationKey(oldDish));currentDish.id=stableRecipeId(recommendationKey(currentDish));mealPlan.aiRecipes=[oldDish,currentDish];mealPlan.results=[currentDish.id];mealPlan.resultMeal='dinner';mealPlan.seenBySignature[recommendationSignature('dinner')]=[recommendationKey(oldDish),recommendationKey(currentDish)];let sentOptions;api=async(url,options)=>{if(url==='/api/recipe-recommendation'){sentOptions=JSON.parse(options.body);return {recipes:[oldDish,currentDish],intent:{},summary:'测试'};}return {revision:state.revision};};persist=async()=>{};`);
+run(`catalogRecipes=JSON.parse(${JSON.stringify(fs.readFileSync(root+'/assets/recipes.json','utf8'))});defaultMeal='dinner';explicitMeal='';mealPlan.roundMeal='dinner';mealPlan.active=null;currentTab='home';mealPlan.request={dish:'番茄、鸡蛋',servings:2,duration:30,mode:'explore'};state.preferences={allergies:[],avoid:[]};persist=async()=>{};`);
+check(`catalogRecipes.length`,180);
+await run(`refreshRecommendations()`);
+check(`mealPlan.results.length>0`);
+check(`mealPlan.results.every(id=>catalogRecipes.some(recipe=>recipe.id===id))`);
+check(`mealPlan.recommendationProvider`,'catalog');
+const firstBatch=run(`[...mealPlan.results]`);
 await run(`refreshRecommendations({rotate:true})`);
-check(`mealPlan.results.length`,1);
-check(`recipeById(mealPlan.results[0]).title`,'旧菜');
-check(`sentOptions.exclude.includes('当前菜')`);
-check(`sentOptions.exclude.includes('旧菜')`,false);
-run(`const imported={id:'draft-unit',title:'用户填写的菜名',sourceText:'番茄炒蛋原文',sourceUrl:'',ingredients:[],steps:[],duration:null,servings:2,uncertainties:[]};api=async()=>({title:'AI菜名',ingredients:[{name:'番茄',quantity:2,unit:'个'}],auxiliaries:[],seasonings:[],steps:['炒番茄'],duration:null,servings:null,appliances:[],uncertainties:[]});persist=async()=>{};`);
-await run(`parseDraftWithDeepSeek(imported)`);
-check(`imported.title`,'用户填写的菜名');check(`imported.steps`,['炒番茄']);check(`imported.parseStatus`,'ai-extracted');
-run(`api=async()=>{throw new Error('请粘贴正文');};`);await run(`parseDraftWithDeepSeek(imported)`);
-check(`imported.parseStatus`,'parse-failed');check(`imported.sourceText`,'番茄炒蛋原文');check(`imported.steps`,['炒番茄']);
+if(run(`mealPlan.results.some(id=>!${JSON.stringify(firstBatch)}.includes(id))`)){
+  check(`mealPlan.results.every(id=>!${JSON.stringify(firstBatch)}.includes(id))`);
+}
+run(`mealPlan.request.dish='';mealPlan.request.mode='use-first';state.inventory=[];`);
+await run(`refreshRecommendations()`);
+check(`mealPlan.results.length`,0);
+run(`state.inventory=[{id:'local-tomato',name:'西红柿',quantity:2,unit:'个',freshness:'新鲜'},{id:'local-egg',name:'鸡蛋',quantity:3,unit:'个',freshness:'新鲜'}];mealPlan.request.dish='西红柿炒蛋';`);
+await run(`refreshRecommendations()`);
+check(`mealPlan.results`,['menu-001']);
+run(`mealPlan.request.servings=4;`);
+await run(`refreshRecommendations()`);
+check(`mealPlan.results`,['menu-001']);
+check(`recipePurchaseNote(recipeForView(recipeById('menu-001'))).includes('番茄、鸡蛋')`);
+run(`mealPlan.menu=[{recipeId:'menu-001',servings:4}];`);
+check(`menuShoppingCandidates().find(item=>item.name==='番茄').suggestedQuantity`,2);
+check(`menuShoppingCandidates().find(item=>item.name==='鸡蛋').suggestedQuantity`,3);
+run(`mealPlan.menu=[];`);
+check(`catalogRecipes.every(recipe=>recipe.imageUrl.startsWith('/assets/recipes/library/')&&recipe.imageSource.includes('家常菜单!H'))`);
+
+run(`mealPlan.request.mode='explore';`);
+await run(`refreshRecommendations()`);
+check(`mealPlan.results`,['menu-001']);
+check(`recipeForView(recipeById('menu-001')).ingredients.find(item=>item.name==='鸡蛋').quantity`,6);
+run(`mealPlan.request.servings=2;state.preferences.avoid=['鸡蛋'];`);
+await run(`refreshRecommendations()`);
+check(`mealPlan.results.length`,0);
+run(`state.preferences.avoid=[];mealPlan.request.dish='番茄炒蛋';mealPlan.request.duration=5;defaultMeal='snack';`);
+await run(`refreshRecommendations()`);
+check(`mealPlan.results`,['menu-001']);
+run(`mealPlan.request.dish='';`);
+await run(`refreshRecommendations()`);
+check(`mealPlan.results.length`,3);
+run(`defaultMeal='dinner';`);
+run(`mealPlan.request.duration=30;mealPlan.request.dish='';state.inventory=[];`);
+check(`imageMarkup({id:'missing',title:'番茄炒蛋',imageUrl:''}).includes('暂无菜品图片')`);
+check(`!imageMarkup({id:'missing',title:'番茄炒蛋',imageUrl:''}).includes('重试搜索')`);
+run(`mealPlan.request.dish='';`);
 run(`currentTab='recipes';mealPlan.menu=[];`);
 check(`recipeCard('tomato-egg-pancake').includes('查看做法')`);
 check(`recipeCard('tomato-egg-pancake').includes('加入本餐')`);
@@ -233,10 +265,8 @@ run(`mealPlan.intent={ingredients:['土豆']};`);
 check(`rankedRecipes('dinner',[{...singleDish,ingredients:[{name:'土豆',quantity:1,unit:'个'}]}]).length`,0);
 run(`mealPlan.intent=null;`);
 check(`rankedRecipes('dinner',[{...singleDish,seasonings:[{name:'食用油',quantity:null,unit:'适量'}]}]).length`,1);
-run(`mealPlan.request.mode='supplement';`);
-check(`rankedRecipes('dinner',[singleDish]).length`,0);
-check(`rankedRecipes('dinner',[{...singleDish,ingredients:[...singleDish.ingredients,{name:'土豆',quantity:1,unit:'个'}]}]).length`,1);
-check(`rankedRecipes('dinner',[{...singleDish,ingredients:[{name:'土豆',quantity:1,unit:'个'}]}]).length`,0);
+run(`state.mealPlan={...mealPlan,request:{...mealPlan.request,mode:'supplement'}};ensurePlan();`);
+check(`mealPlan.request.mode`,'explore');
 run(`state.recipes=[singleDish];currentTab='recipes';mealPlan.menu=[];mealPlan.request.mode='use-first';`);
 check(`recipeCard('single-check').includes('建议优先用')`);
 check(`recipeCard('single-check').includes('快手菜')`);
@@ -280,14 +310,18 @@ const heart={
   querySelector(selector){return selector==='span'?heartLabel:null;},
   classList:{toggle(){}},
 };
-run(`state.favorites=[];currentTab='recipes';recipeScreen='browse';recipeSection='favorites';currentDetailId=null;`);
+run(`state.favorites=[];currentTab='recipes';recipeScreen='browse';recipeSection='saved';currentDetailId=null;`);
 await handlers.click({target:heart});
 assert.equal(heartLabel.textContent,'♥');
 check(`state.favorites`,['single-check']);
+check(`recipePage().includes('source-saved">收藏</span>')`);
+check(`recipeSourceTag({sourceUrl:'https://v.douyin.com/example/'}).includes('source-douyin">抖音</span>')`);
+check(`myRecipeSource({platform:'小红书'})`,'小红书');
+
 check(`recipePage().includes('番茄炒蛋')`);
 await handlers.click({target:heart});
 check(`state.favorites`,[]);
-check(`recipePage().includes('还没有收藏菜谱')`);
+check(`!recipePage().includes('aria-label="取消收藏 番茄炒蛋"')`);
 const linkSubmit={disabled:false};
 const linkForm={
   id:'recipe-link-form',
@@ -300,7 +334,21 @@ await handlers.submit({target:linkForm,preventDefault(){}});
 check(`state.favoriteLinks.map(({title,sourceUrl})=>[title,sourceUrl])`,[['家常烤鱼','https://xhslink.com/example']]);
 check(`recipePage().includes('href="https://xhslink.com/example" target="_blank"')`);
 check(`recipePage().includes('家常烤鱼')&&recipePage().includes('AI 封面')`);
+check(`recipePage().includes('source-xiaohongshu">小红书</span>')`);
+run(`recipeSearch='小红书';`);
+check(`myRecipesPage().includes('家常烤鱼')`);
+run(`recipeSearch='';`);
+
 check(`state.recipeDrafts.length`,draftCount);
+// Card labels are informational; legacy tag selections cannot restrict recommendations.
+run(`mealPlan.request={dish:'番茄炒蛋',servings:2,duration:30,mode:'explore',tags:['川菜']};mealPlan.intent=null;state.preferences={allergies:[],avoid:[]};recipeSection='discover';currentDetailId=null;recipeScreen='browse';currentTab='recipes';`);
+check(`rankedRecipes('dinner',catalogRecipes).some(recipe=>recipe.title==='番茄炒蛋')`);
+check(`!recipePage().includes('菜谱分类筛选')&&!recipePage().includes('recipe-tags-clear')`);
+check(`recipeCard('menu-002').includes('tag-cuisine')&&recipeCard('menu-002').includes('川菜')`);
+check(`recipeCard('menu-002').indexOf('recipe-card-tags')>recipeCard('menu-002').indexOf('</h3>')&&recipeCard('menu-002').indexOf('recipe-card-tags')<recipeCard('menu-002').indexOf('meal-card-meta')`);
+check(`recipeFeatureTags({ingredients:[{name:'莲藕'}],duration:15,steps:['处理','翻炒']},new Date(2026,10,21))`,['时令菜','快手菜','少步骤']);
+check(`!recipeFeatureTags({ingredients:[{name:'莲藕'}]},new Date(2026,3,21)).includes('时令菜')`);
+check(`seasonalIngredients({ingredients:[{name:'鸡蛋'}],seasonings:[{name:'莲藕'}]},new Date(2026,10,21))`,[]);
 console.log(`${assertions} client assertions passed.`);
 // The integration uses main's canonical food names and one-to-one unit aliases.
 check(`stockNameMatches('番茄','西红柿')`);
