@@ -800,22 +800,16 @@ server.mount_proc '/' do |req, res|
     end
 
     if req.path == '/api/recipe-import/parse' && req.request_method == 'POST'
-      body = request_json(req)
-      raise '请求格式错误。' unless body.is_a?(Hash)
-      json_response(res, 200, parse_imported_recipe(body))
+      json_response(res, 410, { error: '菜谱已改用本地菜谱库。' })
       next
     end
 
     if req.path == '/api/recipe-image' && req.request_method == 'POST'
-      body = request_json(req)
-      raise '请求数据格式错误。' unless body.is_a?(Hash)
-      json_response(res, 200, search_recipe_image(body))
+      json_response(res, 410, { error: '菜谱已改用本地菜谱库。' })
       next
     end
     if req.path == '/api/favorite-cover' && req.request_method == 'POST'
-      body = request_json(req)
-      raise '请求数据格式错误。' unless body.is_a?(Hash)
-      json_response(res, 200, generate_favorite_cover(body))
+      json_response(res, 410, { error: '菜谱已改用本地菜谱库。' })
       next
     end
     if req.path.match?(%r{\A/api/generated-images/[0-9a-f]{64}\.jpg\z}) && req.request_method == 'GET'
@@ -836,8 +830,7 @@ server.mount_proc '/' do |req, res|
     end
 
     if req.path == '/api/recipe-recommendation' && req.request_method == 'POST'
-      body = request_json(req) || {}
-      json_response(res, 200, recommend_recipes(body, read_state))
+      json_response(res, 410, { error: '菜谱已改用本地菜谱库。' })
       next
     end
 
